@@ -1,0 +1,616 @@
+<!doctype html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Experiment</title>
+
+  <script src="jspsych-7.0//plugins/jspsych.js"></script>
+  <script src="jspsych-7.0//plugins/plugin-html-keyboard-response.js"></script>
+  <!-- <script src="https://www.naodao.com/public/experiment/libs/plugin/plugin-categorize-html.js"></script> -->
+  <!-- <script src="https://unpkg.com/@jspsych/plugin-virtual-chinrest@2.0.3"></script> -->
+  <script src="jspsych-7.0//plugins/plugin-html-button-response.js"></script>
+  <script src="jspsych-7.0//plugins/plugin-virtual-chinrest.js"></script>
+  <script src="jspsych-7.0//plugins/plugin-survey-text.js"></script>
+  <script src="jspsych-7.0//plugins/plugin-rdk.js"></script>
+  <script src="jspsych-7.0//plugins/plugin-preload.js"></script>
+  <script src="jspsych-7.0//plugins/plugin-fullscreen.js"></script>
+  <script src="jspsych-7.0//plugins/plugin-survey1.js"></script>
+  <script src="jspsych-7.0//plugins/jspsych-staircase.js"></script>
+  <!-- <script src="jspsych-7.0//plugins/staircase.js"></script> -->
+  <!-- <script src="https://unpkg.com/@jspsych/plugin-call-function@1.1.3"></script> -->
+
+  <link rel='stylesheet' href="jspsych-7.0//css/jspsych.css">
+  <link rel="stylesheet" href="jspsych-7.0//css/survey.css">
+  <style>
+    .jspsych-display-element {
+      font-size: 22px;
+    };
+
+    .jspsych-content {
+      max-width: 80%;
+    };
+  </style>
+</head>
+
+<body>
+
+  <!-- Load template experiment -->
+  <script src="template_Expt/getThreshold.js"></script>
+  <script src="template_Expt/shape.js"></script>
+  <script src="template_Expt/color.js"></script>
+
+</body>
+
+<script>
+
+  let userId;
+  let subjSex
+  const queryString = window.location.search;
+  const urlParams = new URLSearchParams(queryString);
+  const testMode = urlParams.get('test')=="true"?true:false
+  const idParam = urlParams.get('id');
+  if (!idParam || isNaN(parseInt(idParam))) {
+    alert('Missing required parameter: id');
+    throw new Error('Missing user ID');
+  }
+  userId = parseInt(idParam);
+  window.userId = userId
+  console.log("userId: ", userId)
+
+  if (testMode) {
+    window.match_pract_mun = 1;
+    window.rdk_pract_mun = 1;
+    window.match_formal_mun = 1;
+    window.rdk_foraml_mun = 1;
+    window.pract_pass_rate = 0
+  } else {
+    window.match_pract_mun = 2;
+    window.rdk_pract_mun = 2;
+    window.match_formal_mun = 3;
+    window.rdk_foraml_mun = 6;
+    window.pract_pass_rate = 90
+  }
+  
+
+  //---------initialize--------
+
+  function saveJsonToFile(jsonData, filename) {
+    const jsonString = JSON.stringify(jsonData);
+  
+    const blob = new Blob([jsonString], { type: "application/json" });
+  
+    const link = document.createElement("a");
+    link.href = window.URL.createObjectURL(blob);
+    link.download = filename.endsWith('.json') ? filename : `${filename}.json`;
+  
+    document.body.appendChild(link);
+    link.click();
+  
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(link.href);
+  }
+
+  var jsPsych = initJsPsych({
+    on_finish: function () {
+      jsPsych.data.get().localSave('csv', `exp3_subj_${userId}.csv`);
+      saveJsonToFile(coherence_output, `exp3_subj_coherence_${userId}.json`);
+    },
+    default_iti: randomInteger(300, 1000),
+  });
+
+  // the body of the experiment
+
+  var main_timeline = [];
+
+  var preload = {
+    type: jsPsychPreload,
+    images: ["img//card.png", "img//color_blindness.jpg"],
+    auto_preload: true
+  };
+
+  var fullScreen = {
+    type: jsPsychFullscreen,
+    fullscreen_mode: true,
+    message: "<p>实验需要全屏模式，实验期间请勿退出全屏</P>",
+    button_label: " <span class='add_' style='color:black; font-size: 20px'> 点击这里进入全屏</span>",
+    data: {
+      part: "fullScreen"
+    },
+  };
+
+
+  //---------Create instructions---------
+
+  var beginning = {
+    type: jsPsychHtmlKeyboardResponse,
+    stimulus: `
+      <div style="text-align: left; color: white">
+        <h3 style="text-align: center; font-size: 30px; margin: 0;">欢迎参与本实验</h3>
+          <p>为充分保障您的权利，请确保您已经知晓并同意《参与实验同意书》以及《数据公开知情同意书》，</p>
+          <p>如果您未见过上述内容，请咨询实验员 ，</p>
+          <p>如果您选择继续实验，则表示您已经清楚两份知情同意书的内容并同意 。</p>
+          <p>在整个实验中，您需要完成三项任务，具体的任务要求会在后面说明 ，</p>
+          <p>请按空格键进入实验</p >
+      </div>`,
+    on_start: function () {
+      document.body.style.backgroundColor = "black";
+      document.body.style.cursor = 'none';
+    },
+    response_ends_trial: true,
+    choices: " ",
+    data: {
+      part: "instruction_beginning",
+    }
+  };
+
+  var end = {
+    type: jsPsychHtmlKeyboardResponse,
+    stimulus: `
+      <div style="text-align: center; color: black; padding: 20px; font-size: 35px">
+        <p>您已完成实验，按下空格或 5 秒后自动退出</p >
+      </div>
+      `,
+    trial_duration: 5000,
+    fullscreen_mode: false,
+    response_ends_trial: true,
+    choices: " ",
+    data: {
+      part: "instruction_end"
+    },
+  };
+
+  //---------Create VirtualChinrest---------
+
+  var card = {
+    type: jsPsychVirtualChinrest,
+    blindspot_reps: 3,
+    resize_units: "cm",
+    pixels_per_unit: 50,
+    item_path: "img//card.png",
+    adjustment_prompt: `
+      <p> <span style="color: red">为了确保研究中的刺激以预期尺寸呈现，请您认真完成以下步骤。</span> </p>
+      <p>这是一个标准的屏幕校对程序，不涉及任何数据的收集。</p> 
+      <p>请您用一张与银行卡大小相匹配的物品，可以是银行卡或身份证，关键是物品的尺寸与标准银行卡尺寸相同。</p> 
+      <p>请单击并拖动图像的右下红角，直到它与您的卡片精准匹配。</p>
+      <p> 如果对以上操作感到困惑，请参考这个视频： <a href='https://www.naodao.com/public/stim_calibrate.mp4' target='_blank' style='font-size:24px'>参考视频</a></p>
+      <p>完成后单击“确认”按钮。</p>
+    `,
+    adjustment_button_prompt: `
+      <button type="button" style="font-size: 18px; width: 100px; height: 50px;">确认</button>
+    `,
+    blindspot_prompt: `
+      <p>现在我们将快速测量您的观看距离。</p>
+      <p>请将左手放在空格键上, 用右手遮住右眼, 左眼盯着黑色方块。 请一直保持这个姿势。</p>
+      <p>按下空格键后，红球会向左运动。当移动到一定距离时它会消失。球消失后请<span style="font-weight: bold">立即再次</span>按下空格键。</p>
+      <p>当您准备好后，请按空格键开始。</p>
+    `,
+    blindspot_measurements_prompt: "剩余次数",
+    viewing_distance_report: `
+      <p>根据您的回答，您的观看距离为<span id='distance-estimate' style='font-weight: bold;'></span></p>
+      <p>这个距离是否正确？</p>
+    `,
+    redo_measurement_button_label: `
+      <button type="button" style="font-size: 18px; width: 100px; height: 50px;">再试一次</button>
+    `,
+    blindspot_done_prompt: `
+      <button type="button" style="font-size: 18px; width: 100px; height: 50px;">是的</button>
+    `,
+    data: {
+      part: "jsPsychVirtualChinrest"
+    }
+  };
+      
+  var resized_stimulus = {
+    type: jsPsychHtmlButtonResponse,
+    stimulus: `
+      <p>如果之前的测量正确, 在保持您现在的观看距离下, 下面的黑色正方形边长应为<span style='font-weight: bold;'>10 cm</span>。</p>
+      <div style="background-color: black; width: 500px; height: 500px; margin: 20px auto;"></div>
+    `,
+    choices: [ `<button type="button" style="font-size: 18px; width: 100px; height: 50px;">继续</button>` ],
+    data: {
+      part: "jsPsychVirtualChinrest"
+    }
+  };
+
+  //---------collecte perticipent's information---------
+
+  const information = {
+    type: jsPsychSurvey,
+    survey_json: {
+      showQuestionNumbers: true, title: "请填写基本信息", completeText: "提交",
+      elements: [
+        {
+          type: "radiogroup",
+          title: "性别",
+          choices: ["男", "女"],
+          isRequired: true,
+          showNoneItem: false,
+          hasOther: false,
+          colCount: 0,
+          name: "sex"
+        },
+        {
+          type: 'text',
+          title: "年龄",
+          name: "age",
+          isRequired: true,
+          inputType: "number",
+          min: 0,
+          max: 100
+        },
+        {
+          type: "radiogroup",
+          title: "利手或惯用手",
+          choices: ["左", "右"],
+          isRequired: true,
+          showNoneItem: false,
+          hasOther: false,
+          colCount: 0,
+          name: "hands"
+        },
+        {
+          type: "radiogroup",
+          title: "是否为色盲或色弱",
+          choices: ["色盲", "色弱", "都不是", "不确定"],
+          isRequired: true,
+          showNoneItem: false,
+          hasOther: false,
+          colCount: 0,
+          name: "color_blindness"
+        }
+      ]
+    },
+    data: {
+      part: "survey"
+    },
+    on_finish: function (data) {
+      window.subjSex = data.response.sex; 
+      console.log("subjSex:", window.subjSex)
+    }
+  };
+
+  var color_test = {
+    type: jsPsychSurveyText,
+    preamble: `<img src="img/color_blindness.jpg" style="width:600px;"></img>`,
+    questions: [
+      { prompt: '请在方框内输入你从上图中看到的字母（可以不区分大小写），如果没有看见任何字母，请输入“none”', rows: 2 }
+    ],
+    button_label: "提交",
+    data: {
+      part: "color_test"
+    },
+    on_finish: function (data) {
+      console.log("输入的字母：", data.response)
+    }
+  };
+
+  const survey_isMatch = {
+    type: jsPsychSurvey,
+    survey_json: {
+      showQuestionNumbers: true,
+      title: "请回答以下问题",
+      completeText: "提交",
+      elements: [],
+    },
+    data: {
+      part: "survey_isMatch",
+    },
+    on_finish: function (data) {
+      console.log("匹配问题的选择：", data.response)
+    },
+    on_start: function () {
+      document.body.style.backgroundColor = "white";
+      document.body.style.cursor = 'default';
+      //survey_isMatch.survey_json.elements[0].choices[1] = `${labelVar}`
+    }
+  };
+
+  if (userId <= 40) {
+    survey_isMatch.survey_json.elements = [
+      {
+        type: "radiogroup",
+        title: "在之前的任务中，散点图中大多数为圆形代表",
+        choices: ["我", "TA"],
+        isRequired: true,
+        showNoneItem: false,
+        hasOther: false,
+        colCount: 0,
+        name: "shape_circle",
+      },
+      {
+        type: "radiogroup",
+        title: "散点图中大多数为正方形代表",
+        choices: ["我", "TA"],
+        isRequired: true,
+        showNoneItem: false,
+        hasOther: false,
+        colCount: 0,
+        name: "shape_square",
+      },
+    ];
+  } else {
+    survey_isMatch.survey_json.elements = [
+      {
+        type: "radiogroup",
+        title: "在之前的任务中，散点图整体为红色代表",
+        choices: ["我", "TA"],
+        isRequired: true,
+        showNoneItem: false,
+        hasOther: false,
+        colCount: 0,
+        name: "color_red",
+      },
+      {
+        type: "radiogroup",
+        title: "散点图整体为蓝色代表",
+        choices: ["我", "TA"],
+        isRequired: true,
+        showNoneItem: false,
+        hasOther: false,
+        colCount: 0,
+        name: "color_blue",
+      },
+    ];
+  }
+
+  const survey_strategy = {
+    type: jsPsychSurvey,
+    survey_json: {
+      showQuestionNumbers: true, title: "答案没有好坏之分，请您根据自己的实际情况回答", completeText: "提交",
+      elements: [
+        {
+          type: "matrix",
+          name: "subjective-rating-matrix",
+          title: "计分标准：1 = 极低；7 = 极高",
+          alternateRows: true,
+          isAllRowRequired: true,
+          rows: [
+            {text: "您觉得任务的整体难度如何", value: "task difficulty"},
+            {text: "完成任务过程中，您投入的精力如何", value: "effort invested"},
+            {text: "整体完成本次实验任务的愉悦程度", value: "enjoyment"}
+          ],
+          columns: [
+            {value: 1, text: "1"},
+            {value: 2, text: "2"},
+            {value: 3, text: "3"},
+            {value: 4, text: "4"},
+            {value: 5, text: "5"},
+            {value: 6, text: "6"},
+            {value: 7, text: "7"}
+          ]
+        },
+        {
+          type: "checkbox",
+          title: "您觉得实验设置中影响任务表现的主要障碍是什么？",
+          choices: ["刺激细节难以看清", "看清楚了但难以辨别", "难以集中注意力", "每段任务的时间太长，容易疲劳", "整个实验的时间太长，精力不足", "没有时间"],
+          isRequired: true,
+          showNoneItem: false,
+          hasOther: true,
+          colCount: 0,
+          name: "main obstacle"
+        },
+        {
+          type: "checkbox",
+          title: "您觉得实验环境中影响任务表现的因素有什么？",
+          choices: ["噪音干扰", "其他人在附近", "电脑屏幕上有其他窗口出现、消息弹窗", "腾讯会议悬浮窗口分心", "屏幕亮度/大小不合适"],
+          isRequired: true,
+          showNoneItem: false,
+          hasOther: true,
+          colCount: 0,
+          name: "environmental factor"
+        },
+        {
+          type: "radiogroup",
+          title: "在整个实验中，您更追求的目标是",
+          choices: ["尽快地完成实验", "尽可能正确地完成实验", "又快又准地完成", "没有特别的目标，就是按键"],
+          isRequired: true,
+          showNoneItem: false,
+          hasOther: true,
+          colCount: 0,
+          name: "speed-accuracy trade-off"
+        },
+        {
+          type: "radiogroup",
+          title: "在整个实验中，进行判断时，您更关注",
+          choices: ["散点图的整体", "散点图的某个局部（如只关注某个地方或某种形状/颜色）", "没有特定的关注方式"],
+          isRequired: true,
+          showNoneItem: false,
+          hasOther: true,
+          colCount: 0,
+          name: "whole-part"
+        },
+        {
+          type: "radiogroup",
+          title: "在学习阶段，完成匹配任务（上方呈现图片下方呈现文字并需要做匹配判断）中，您优先的关注是",
+          choices: ["散点图是什么", "文字是什么", "同时判断"],
+          isRequired: true,
+          showNoneItem: false,
+          hasOther: true,
+          colCount: 0,
+          name: "match task dot-word"
+        },
+        {
+          type: "radiogroup",
+          title: "在匹配学习中，您是否有使用策略更好地记忆什么代表自己或他人",
+          choices: ["有", "无"],
+          isRequired: true,
+          showNoneItem: false,
+          hasOther: false,
+          colCount: 0,
+          name: "match task memory strategy"
+        },
+        {
+          type: 'text',
+          title: "您使用的记忆策略是",
+          name: "memory strategy",
+          visibleIf: "{match task memory strategy} = \"有\"",
+          isRequired: true
+        },
+        {
+          type: "radiogroup",
+          title: "在选择散点代表谁的任务中，您是否有使用任何策略",
+          choices: ["有", "无"],
+          isRequired: true,
+          showNoneItem: false,
+          hasOther: false,
+          colCount: 0,
+          name: "identity task strategy"
+        },
+        {
+          type: "radiogroup",
+          title: "在选择散点整体颜色的任务中，您是否有使用任何策略",
+          choices: ["有", "无"],
+          isRequired: true,
+          showNoneItem: false,
+          hasOther: false,
+          colCount: 0,
+          name: "color task strategy"
+        },
+        {
+          type: "radiogroup",
+          title: "在选择散点整体形状的任务中，您是否有使用任何策略",
+          choices: ["有", "无"],
+          isRequired: true,
+          showNoneItem: false,
+          hasOther: false,
+          colCount: 0,
+          name: "shape task strategy"
+        },
+        {
+          type: "radiogroup",
+          title: "不同选择任务的策略",
+          choices: ["相同", "不同"],
+          isRequired: true,
+          showNoneItem: false,
+          hasOther: false,
+          colCount: 0,
+          name: "strategy same or different",
+          visibleIf: "{identity task strategy} = \"有\" or {color task strategy} = \"有\" or {shape task strategy} = \"有\""
+        },
+        {
+          type: "radiogroup",
+          title: "如果策略不同，哪一个任务策略变化最大",
+          choices: ["选择散点代表谁的任务", "选择散点整体颜色任务", "选择散点整体形状的任务"],
+          isRequired: true,
+          showNoneItem: false,
+          hasOther: false,
+          colCount: 0,
+          name: "strategy change most",
+          visibleIf: "{strategy same or different} = \"不同\""
+        },
+        {
+          type: 'text',
+          title: "实验中是否有特定线索或信息提升作答表现",
+          name: "helpful cues",
+          isRequired: false
+        },
+        {
+          type: "radiogroup",
+          title: "当前任务的报酬对您完成任务的影响",
+          choices: ["报酬较低，希望尽快结束", "报酬较低，缺乏动力", "报酬适中，对我的作答没有影响", "报酬较高，促使我更认真完成", "报酬较高，担心出错而紧张"],
+          isRequired: true,
+          showNoneItem: false,
+          hasOther: true,
+          colCount: 0,
+          name: "reward influence"
+        }
+      ]
+    },
+    data: {
+      part: "survey_strategy"
+    },
+    on_finish: function (data) {
+      console.log("策略问卷回答：", data.response)
+    }
+  };
+
+  //---------事后动机问卷---------
+
+  var survey_motivation = {
+    type: jsPsychSurvey,
+    survey_json: {
+      showQuestionNumbers: true,
+      title: "事后动机问卷",
+      completeText: "提交",
+      elements: [
+        {
+          type: "matrix",
+          name: "motivation-matrix",
+          title: "下面几个问题主要针对您刚才的整个实验任务，请您选择合适的选项",
+          alternateRows: true,
+          isAllRowRequired: true,
+          rows: [
+            {text: "我希望自己的表现优于大多数人", value: "motivation outperform"},
+            {text: "我渴望把任务做好", value: "motivation eager"},
+            {text: "完成这个任务是有价值的", value: "motivation valuable"},
+            {text: "我其实并不太在意自己的表现", value: "motivation indifferent"},
+            {text: "这个任务激发了我的竞争欲望", value: "motivation competitive"},
+            {text: "我在完成任务中投入了很多精力", value: "motivation effort"}
+          ],
+          columns: [
+            {value: 1, text: "完全不符合"},
+            {value: 2, text: "不太符合"},
+            {value: 3, text: "有点符合"},
+            {value: 4, text: "比较符合"},
+            {value: 5, text: "完全符合"}
+          ]
+        }
+      ]
+    },
+    data: {
+      part: "survey_motivation"
+    },
+    on_finish: function (data) {
+      console.log("动机问卷回答：", data.response)
+    }
+  };
+
+  //分配不同的组别
+
+  var group_shape = {
+    timeline: [shape],
+    conditional_function: function () {
+      if (userId <= 40) {
+        console.log("shape-association");
+        return true;
+      } else {
+        return false;
+      }
+    }
+  };
+
+  var group_color = {
+    timeline: [color],
+    conditional_function: function () {
+      if (userId > 40) {
+        console.log("color-association");
+        return true;
+      } else {
+        return false;
+      }
+    }
+  };
+
+  var assign_group = {
+    timeline: [group_shape, group_color
+    ],
+  };
+
+
+
+  //---------timeline---------
+
+  main_timeline = [preload, fullScreen,  card, resized_stimulus, 
+    information, color_test, 
+    beginning, 
+    getThreshold, 
+    assign_group, 
+    survey_isMatch, survey_strategy, survey_motivation, end]
+
+  jsPsych.run(main_timeline);
+
+</script>
+
+</html>

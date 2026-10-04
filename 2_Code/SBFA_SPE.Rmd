@@ -1,0 +1,120 @@
+---
+title: "Bayesian Sequential Analysis for Sample‑Size Determination"
+date: "`r format(Sys.Date(), '%Y-%m-%d')`"
+documentclass: ctexart
+output:
+  html_document:
+    fig_caption: true
+    number_sections: true
+    toc: true
+  pdf_document:
+    toc: true
+geometry: left=2cm,right=2cm,top=2cm,bottom=2cm
+editor_options:
+  markdown:
+    wrap: 72
+---
+
+- Stopping rules:
+    - Bayes factor threshold set to 10
+    - Minimum sample size = 40, maximum sample size = 80
+- **Key research hypothesis**: There is an interaction between association type and task type. This critical hypothesized effect determines when to terminate data collection in the present study.
+- Only the interaction effect will be tested here.
+
+
+```{r}
+rm(list = ls())
+```
+
+Download and install required R packages
+
+```{r message=FALSE, warning=FALSE}
+# install.packages(c("tidyverse", "BayesFactor", "here"))
+library(BayesFactor) # Compute Bayes factors for t‑tests and ANOVA
+packageVersion("BayesFactor")
+library(tidyverse)
+library(showtext)
+library(latex2exp) # latex
+showtext_auto()
+library(here)
+here()
+options(scipen = 9)
+set.seed(1234)
+```
+
+Load custom functions
+
+```{r}
+source(here::here("Functions/Function_bf_avo.R"))
+source(here::here("Functions/Function_plot_avo.R"))
+```
+
+## Read cleaned data
+
+```{r}
+# Adjust file paths and filenames according to real‑world conditions
+# Set relative path for target folder
+folder_path <- "../../3_Data/3_2_exp2/CleanData"
+
+# List target files
+file_list <- list.files(
+  path = folder_path,
+  pattern = "*df_.*\\.csv$", full.names = TRUE
+)
+
+# Initialize a list to store data frames
+df_list <- list()
+for (i in seq_along(file_list)) {
+  df_name <- tools::file_path_sans_ext(file_list[i])
+  df_list[[df_name]] <- read.csv(file_list[i])
+}
+```
+
+
+## Bayes factor calculation
+
+```{r}
+data_sbfa <- data_sbfa %>% 
+  dplyr::mutate(subj_idx = as.factor(subj_idx))
+```
+
+
+### ACC
+
+```{r}
+bfs_acc <- bf_aov(data_sbfa, 'acc')
+
+bfs_acc
+```
+
+**Visualization**
+
+```{r}
+plot_bfs_association <- plot_aov(bfs_acc, 'bfs_association', 'Association effect (ACC)')
+plot_bfs_association
+
+plot_bfs_int <- plot_aov(bfs_acc, 'bfs_int', 'Interaction (ACC)')
+plot_bfs_int
+```
+
+#### RT
+
+```{r}
+bfs_rt <- bf_aov(data_sbfa, 'rt')
+
+bfs_rt
+```
+
+**Visualization**
+
+```{r}
+plot_bfs_association <- plot_aov(bfs_rt, 'bfs_association', 'Association effect (RT)')
+plot_bfs_association
+
+plot_bfs_int <- plot_aov(bfs_rt, 'bfs_int', 'Interaction (RT)')
+plot_bfs_int
+```
+
+
+
+**End**
