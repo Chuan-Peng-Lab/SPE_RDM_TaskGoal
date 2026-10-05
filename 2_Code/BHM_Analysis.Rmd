@@ -14,56 +14,59 @@ output: html_document
 #         Sys.setlocale(category = 'LC_ALL','en_US.UTF-8')  
 # } 
 
-# Install cmdstanr as backend
-if (!require(cmdstanr)){
+# Install cmdstanr, the Stan backend that brms uses for sampling
+if (!require(cmdstanr)){   # check whether cmdstanr is already installed
+        # install it from the Stan R-universe repo if missing
         install.packages("cmdstanr", repos = c('https://stan-dev.r-universe.dev', getOption("repos")))
-        library(cmdstanr)
+        library(cmdstanr)   # attach it
 }
 
-# Get current working directory
-curDir = getwd()  
+# Get the current working directory (fitted models are cached under glmmModels/)
+curDir = getwd()   # store the working directory used for the model file paths
 curDir
-set.seed(42)  
-knitr::opts_chunk$set(cache.extra = knitr::rand_seed)
+set.seed(42)   # fix the random seed so MCMC sampling is reproducible
+knitr::opts_chunk$set(cache.extra = knitr::rand_seed)  # make knitr chunk caching seed-aware
 
 
-# Configure R packages
-if (!require(pacman)){
+# Configure R packages (via the pacman package manager)
+if (!require(pacman)){   # check whether pacman is already installed
+        # install it if missing
         install.packages("pacman")
-        library(pacman)
+        library(pacman)   # attach it
 }
 
+# Load (and install if missing) all packages needed for the analyses
 pacman::p_load(
-  "rstan",
-  "tidyverse",  
-  "ggplot2", 
-  "brms", 
-  "bayesplot",  
-  "bridgesampling",  
-  "papaja"  
+  "rstan",          # Stan interface used by brms
+  "tidyverse",      # data manipulation and plotting
+  "ggplot2",         # plotting
+  "brms",           # Bayesian multilevel (mixed-effects) models
+  "bayesplot",      # MCMC diagnostics and posterior plots
+  "bridgesampling", # bridge sampling for Bayes factors
+  "papaja"          # APA-style output and plot themes
 )
 ```
 
 # Data Preprocessing
+
 ```{r data_preprocess}
-# load in function
-source("Functions/Function_run_lmer.R")
+# Load the custom helper functions used in this analysis
+# source("Functions/Function_run_lmer.R")
 
-# set paths
-dataPath <- "../../3_Data/exp3/CleanData/"
+# Set the path of the cleaned data folder (adjust to your local layout if needed)
+dataPath <- "../../3_Data/CleanData/"
 
-# load in data
+# Load the trial-level dataset and set the reference levels of the factors
+# one row per trial
 data_all <- read.csv(file = file.path(dataPath, "data_all.csv")) %>%
   dplyr::mutate(
     # R uses the first factor level as reference (0) for dummy‑variable coding
-    association = factor(association, levels = c("self", "other")),
-    task_type = factor(task_type, levels = c("overlap", "relevant", "irrelevant"))
+    association = factor(association, levels = c("self", "other")),    # "self" = baseline level
+    task_type = factor(task_type, levels = c("overlap", "relevant", "irrelevant"))  # "overlap" (identity-choice) = baseline
 )
 
+# Convert RT from seconds (as stored in data_all.csv) to milliseconds
 data_all$rt <- data_all$rt * 1000
-
-# data_all$task_type <- factor(data_all$task_type)
-# data_all$task_type <- relevel(data_all$task_type, ref = "relevant")
 ```
 
 
@@ -71,34 +74,42 @@ data_all$rt <- data_all$rt * 1000
 # 1 Test Hypothesis 1 (association * task‑type interaction)
 ## 1.1 RT
 ### 1. Model Fitting
+
 ```{r warning=FALSE}
+# Model 1: RT ~ association x task_type interaction (identity-choice & identity-relevant tasks)
 m1_rt <- data_all %>%
-  dplyr::filter(correct == 1) %>%
+  dplyr::filter(correct == 1) %>%     # RT models use correct trials only
   brms::brm(
+    # Fixed effects: association x task_type; random effects: participant-level intercepts
+    # and slopes for the full interaction (maximal random structure)
     rt ~ association*task_type + (1 + association*task_type|subj_idx),
     data = ., 
-    family=lognormal(),
-    prior = prior(normal(0, 3), class = b),
-    chains = 4,   
-    warmup = 500,  
-    iter = 2000,  
-    thin = 1, 
-    sample_prior = "yes",
-    control = list(adapt_delta = .95),
-    cores = parallel::detectCores(),
-    backend = 'cmdstanr',
-    save_pars = save_pars(all = TRUE),
-    file = file.path(curDir, "glmmModels/m1_rt") 
+    family=lognormal(),               # RTs are positively skewed -> lognormal likelihood
+    prior = prior(normal(0, 3), class = b),  # weakly informative priors on the regression coefficients
+    chains = 4,                       # 4 independent MCMC chains
+    warmup = 500,                     # 500 warm-up (burn-in) iterations per chain
+    iter = 2000,                      # 2000 total iterations per chain
+    thin = 1,                         # keep every sample (no thinning)
+    sample_prior = "yes",             # also draw from the prior (for prior checks)
+    control = list(adapt_delta = .95),  # higher target acceptance rate to avoid divergent transitions
+    cores = parallel::detectCores(),  # use all available CPU cores
+    backend = 'cmdstanr',             # sample with the cmdstanr backend
+    save_pars = save_pars(all = TRUE),  # save all model parameters
+    file = file.path(curDir, "glmmModels/m1_rt")  # cache the fitted model to disk
 )
 ```
 
 ### 2. Model Evaluation
+
 ```{r}
+# Inspect the model: Rhat, ESS, and posterior summaries of all parameters
 summary(m1_rt)
 ```
 
 ### 3. Posterior Predictive Check
+
 ```{r}
+# Posterior predictive check: overlay the density of simulated RTs (y_rep) on the observed RTs
 pp_check(m1_rt, type = "dens_overlay") +papaja::theme_apa()
 ```
 
@@ -106,234 +117,259 @@ pp_check(m1_rt, type = "dens_overlay") +papaja::theme_apa()
 
 ```{r}
 # Population‑level fixed effects: reaction‑time distribution for each condition
+# Posterior distribution of the population-level RT of each condition
 df_rt_pop <- m1_rt %>%
-  tidybayes::gather_draws(`b_.*`, regex = TRUE) %>%
-  dplyr::rename(term = .variable,
+  tidybayes::gather_draws(`b_.*`, regex = TRUE) %>%  # draw the posterior of every b_ (fixed-effect) parameter
+  dplyr::rename(term = .variable,    # rename tidybayes columns
                 pop_mean = .value) %>% 
   dplyr::ungroup() %>%
-  dplyr::mutate(term = gsub("b_", "", term))%>%
+  dplyr::mutate(term = gsub("b_", "", term)) %>%   # strip the "b_" prefix from the parameter names
   tidyr::pivot_wider(names_from = c(term), values_from = pop_mean) %>%   # long to wide
   # Compute predicted RT distribution for each experimental condition
   dplyr::mutate(
     self_overlap = Intercept,   # self and overlap set as reference baseline
-    other_overlap = Intercept  + associationother,
-    self_irrelevant = Intercept  + task_typeirrelevant,
-    other_irrelevant = Intercept  + task_typeirrelevant + associationother +`associationother:task_typeirrelevant` ,
-    self_relevant = Intercept  + task_typerelevant,
-    other_relevant = Intercept + associationother + task_typerelevant + `associationother:task_typerelevant`
+    other_overlap = Intercept  + associationother,   # other + identity-choice
+    self_irrelevant = Intercept  + task_typeirrelevant,   # self + identity-irrelevant
+    other_irrelevant = Intercept  + task_typeirrelevant + associationother +`associationother:task_typeirrelevant` ,   # other + identity-irrelevant
+    self_relevant = Intercept  + task_typerelevant,   # self + identity-relevant
+    other_relevant = Intercept + associationother + task_typerelevant + `associationother:task_typerelevant`   # other + identity-relevant
     )%>%
-  dplyr::select(`.chain`, `.iteration`, `.draw`,
+  dplyr::select(`.chain`, `.iteration`, `.draw`,     # keep chain/draw info plus the condition columns
                 self_overlap, other_overlap,
                 self_irrelevant, other_irrelevant,
                 self_relevant, other_relevant) %>%
   # wide to long
   tidyr::pivot_longer(cols = self_overlap:other_relevant, names_to = "term", values_to =  "value") %>%  
-  dplyr::mutate(term = factor(term, levels = c(
+  dplyr::mutate(term = factor(term, levels = c(  # fix the display order of the conditions
     'self_overlap', 'other_overlap', 
     'self_irrelevant', 'other_irrelevant', 
     'self_relevant', 'other_relevant'
   )),
   # Back‑transform from log scale
-  value = exp(value))
-  # value = value *1000)
+  value = exp(value))            # back-transform from the log scale to ms
 
 df_rt_pop
 ```
 
 ```{r}
 # Population‑level fixed effects: posterior distribution of condition differences
+# Posterior distribution of the RT difference between conditions (other - self)
 df_rt_pop_diff_wide <- df_rt_pop %>%
-  tidyr::pivot_wider(names_from = c(term), values_from = value) %>%
+  tidyr::pivot_wider(names_from = c(term), values_from = value) %>%  # back to wide format
   dplyr::mutate(
-    diff_os_overlap = other_overlap - self_overlap,
-    diff_os_irrelevant = other_irrelevant - self_irrelevant,
-    diff_os_relevant = other_relevant - self_relevant
+    diff_os_overlap = other_overlap - self_overlap,   # RT difference in the identity-choice task
+    diff_os_irrelevant = other_irrelevant - self_irrelevant,   # RT difference in the identity-irrelevant task
+    diff_os_relevant = other_relevant - self_relevant   # RT difference in the identity-relevant task
   ) %>%
-  dplyr::select(`.chain`, `.iteration`, `.draw`, diff_os_overlap,
-    diff_os_irrelevant, diff_os_relevant)
+  dplyr::select(`.chain`, `.iteration`, `.draw`, diff_os_overlap,   # keep only the difference columns
+    diff_os_irrelevant, diff_os_relevant)   # (positive = other slower, i.e. self advantage)
 
-df_rt_pop_diff_wide
+df_rt_pop_diff_wide   # show the difference draws
 ```
 
 ```{r}
 # Population‑level fixed effects: posterior‑distribution summary statistics
+# Posterior summary statistics (median, 95% HDI, pd) for each condition's RT
 df_rt_fixed <- df_rt_pop%>%
-  tidyr::pivot_wider(.,
-                     id_cols = c('.chain', '.iteration', '.draw'),
-                     names_from = term ) %>%
-  dplyr::select(-c('.chain', '.iteration', '.draw')) %>%
-  bayestestR::describe_posterior(.,
-                                 ci = 0.95,
-                                 ci_method = 'hdi',
-                                 test = c("p_direction", "p_significance"),
-                                 centrality = "median") %>%
-  tidyr::separate(Parameter, c('association', 'task_type')) %>%
-  dplyr::mutate(association = factor(association, levels = c('self', 'other')),
-                task_type = factor(task_type, levels = c('overlap','irrelevant', 'relevant')))
+  tidyr::pivot_wider(.,                       # one column per condition
+                     id_cols = c('.chain', '.iteration', '.draw'),   # keep chain info as IDs
+                     names_from = term ) %>%                   # create one column per condition
+  dplyr::select(-c('.chain', '.iteration', '.draw')) %>%   # drop chain columns before summarizing
+  bayestestR::describe_posterior(.,           # summarize the posterior of each condition
+                                 ci = 0.95,                   # 95% credible interval
+                                 ci_method = 'hdi',          # highest-density interval
+                                 test = c("p_direction", "p_significance"),   # probability of direction & of significance
+                                 centrality = "median") %>%               # use the median as the point estimate
+  tidyr::separate(Parameter, c('association', 'task_type')) %>%  # split "self_overlap" into two factor columns
+  dplyr::mutate(association = factor(association, levels = c('self', 'other')),   # restore factor levels
+                task_type = factor(task_type, levels = c('overlap','irrelevant', 'relevant')))  # restore factor levels
 
-summary(df_rt_fixed)
+summary(df_rt_fixed)   # print the summary table
 ```
 
 
 ```{r}
 # Statistical inference using the sexit framework
+# sexit: sequential-effect existence & significance testing - does each difference
+# columns 4-6 hold the three task differences
 bayestestR::sexit(df_rt_pop_diff_wide[,c(4:6)])
 ```
 
+**BF**
+
 ```{r}
 # Compute Bayes factors
-# identity-choice task
+# Savage-Dickey Bayes factor for the simple effect:
+
+# self-other RT effect in the identity-choice task
 hyp_choice <- hypothesis(m1_rt, "associationother = 0")
-BF01_choice <- hyp_choice$hypothesis$Evid.Ratio
-BF10_choice <- 1 / BF01_choice
+BF01_choice <- hyp_choice$hypothesis$Evid.Ratio   # evidence for the null vs. the alternative
+BF10_choice <- 1 / BF01_choice                    # invert to obtain BF10
 print(BF10_choice)
 
-# id-televant task
+# Simple effect in the identity-relevant task = main effect + interaction contrast (not change of task, so, need add main effect)
 hyp_relevant <- hypothesis(m1_rt, "associationother + associationother:task_typerelevant = 0")
-BF01_relevant <- hyp_relevant$hypothesis$Evid.Ratio
-BF10_relevant <- 1 / BF01_relevant
+BF01_relevant <- hyp_relevant$hypothesis$Evid.Ratio   # evidence for the null
+BF10_relevant <- 1 / BF01_relevant                    # BF10
 print(BF10_relevant)
 
-# id-irrelevant task
+# Simple effect in the identity-irrelevant task = main effect + interaction contrast
 hyp_irrelevant <- hypothesis(m1_rt, "associationother + associationother:task_typeirrelevant = 0")
-BF01_irrelevant <- hyp_irrelevant$hypothesis$Evid.Ratio
-BF10_irrelevant <- 1 / BF01_irrelevant
+BF01_irrelevant <- hyp_irrelevant$hypothesis$Evid.Ratio   # evidence for the null
+BF10_irrelevant <- 1 / BF01_irrelevant                    # BF10
 print(BF10_irrelevant)
 ```
 
 ## 1.2 ACC
 ### 1. Model Fitting
+
 ```{r warning=FALSE}
-# iter=1000,Total execution time: 852.2 seconds..18mins
+# iter=1000,Total execution time: 852.2 seconds..18mins  (recorded runtime of a previous fit)
+# Model 2: accuracy ~ association x task_type interaction
 m2_acc <- data_all %>%
-  # dplyr::mutate(correct = ifelse(correct == "true", 1, 0)) %>%
   brms::brm(
+    # Fixed effects: association x task_type; random effects: participant-level intercepts
+    # and slopes for the full interaction
     correct ~ association*task_type + (1 + association*task_type|subj_idx),
     data = .,
-    family = "bernoulli",
-    prior = prior(normal(0, 3), class = b),
-    chains = 4,   
-    warmup = 500,  
-    iter = 2000,  
-    thin = 1, 
-    sample_prior = "yes", 
-    control = list(adapt_delta = .95),
-    cores = parallel::detectCores(),
-    backend = 'cmdstanr', 
-    save_pars = save_pars(all = TRUE),
-    file = file.path(curDir, "glmmModels/m2_acc") 
+    family = "bernoulli",             # binary accuracy -> Bernoulli likelihood (logit link)
+    prior = prior(normal(0, 3), class = b),  # weakly informative priors on the regression coefficients
+    chains = 4,                       # 4 independent MCMC chains
+    warmup = 500,                     # 500 warm-up (burn-in) iterations per chain
+    iter = 2000,                      # 2000 total iterations per chain
+    thin = 1,                         # keep every sample (no thinning)
+    sample_prior = "yes",             # also draw from the prior (for prior checks)
+    control = list(adapt_delta = .95),  # higher target acceptance rate to avoid divergent transitions
+    cores = parallel::detectCores(),  # use all available CPU cores
+    backend = 'cmdstanr',             # sample with the cmdstanr backend
+    save_pars = save_pars(all = TRUE),  # save all model parameters
+    file = file.path(curDir, "glmmModels/m2_acc")  # cache the fitted model to disk
 )
 ```
 
 ### 2. Model Evaluation
+
 ```{r}
+# Inspect the model: Rhat, ESS, and posterior summaries of all parameters
 summary(m2_acc)
 ```
 
 ### 3. Posterior Predictive Check
+
 ```{r}
+# Posterior predictive check: overlay the density of simulated accuracies on the observed data
 pp_check(m2_acc, type = "dens_overlay") + papaja::theme_apa()
 ```
 
 ### 4. Statistical Inference
 
+**raw accuracy difference**
+
 ```{r}
+# Create a grid of all 2 (association) x 3 (task_type) condition combinations
 newdata <- expand.grid(
-  association = levels(factor(data_all$association)),
-  task_type   = levels(factor(data_all$task_type))
+  association = levels(factor(data_all$association)),   # self / other
+  task_type   = levels(factor(data_all$task_type))     # overlap / relevant / irrelevant
 )
 
-# population-level
+# Draw posterior predicted probabilities (population level)
 draws <- newdata %>%
-  add_epred_draws(m2_acc, re_formula = NA)
+  add_epred_draws(m2_acc, re_formula = NA)  # re_formula = NA -> ignore participant random effects
 
 
+# Compute the self - other predicted-probability difference per draw
 diff_draws <- draws %>%
   ungroup() %>%
-  select(.draw, task_type, association, .epred) %>%
-  pivot_wider(
-    names_from = association,
-    values_from = .epred
+  select(.draw, task_type, association, .epred) %>%  # keep only the columns needed
+  pivot_wider(                 # put self/other side by side
+    names_from = association,   # one column per association level
+    values_from = .epred      # the predicted probabilities fill the columns
   ) %>%
   mutate(
-    diff_self_other = self - other   
+    diff_self_other = self - other   # accuracy difference (self - other)
   )
 
+# Summarize the posterior difference per task: median and 95% quantile interval
 diff_summary <- diff_draws %>%
-  group_by(task_type) %>%
+  group_by(task_type) %>%   # summarize within each task
   summarise(
-    median = median(diff_self_other),
-    lower  = quantile(diff_self_other, 0.025),
-    upper  = quantile(diff_self_other, 0.975),
-    .groups = "drop"
+    median = median(diff_self_other),   # posterior median
+    lower  = quantile(diff_self_other, 0.025),   # 2.5% quantile
+    upper  = quantile(diff_self_other, 0.975),   # 97.5% quantile
+    .groups = "drop"   # drop the grouping after summarizing
   ) %>%
   mutate(
-    median_pct = median * 100,
-    lower_pct  = lower * 100,
-    upper_pct  = upper * 100
+    median_pct = median * 100,   # express on the percentage scale
+    lower_pct  = lower * 100,   # percentage scale
+    upper_pct  = upper * 100     # percentage scale
   )
 
-diff_summary
+diff_summary   # print the summary table
 ```
+
+**data for polt**
 ```{r}
+# Create a grid of all 2 (association) x 3 (task_type) condition combinations
 newdata <- expand.grid(
-  association = levels(factor(data_all$association)),
-  task_type   = levels(factor(data_all$task_type))
+  association = levels(factor(data_all$association)),   # self / other
+  task_type   = levels(factor(data_all$task_type))     # overlap / relevant / irrelevant
 )
 
 draws <- newdata %>%
-  add_epred_draws(m2_acc, re_formula = NA)
+  add_epred_draws(m2_acc, re_formula = NA)  # re_formula = NA -> ignore participant random effects
 
 # Compute diff_self_other while retaining .chain and .iteration
+# Compute the self - other predicted-probability difference per draw
 diff_draws <- draws %>%
   ungroup() %>%
-  select(.chain, .iteration, .draw, task_type, association, .epred) %>% 
-  pivot_wider(
-    names_from = association,
-    values_from = .epred
+  select(.chain, .iteration, .draw, task_type, association, .epred) %>%  # keep chain info too (needed by sexit later)
+  pivot_wider(                 # put self/other side by side
+    names_from = association,   # one column per association level
+    values_from = .epred      # the predicted probabilities fill the columns
   ) %>%
   mutate(
-    diff_self_other = self - other 
+    diff_self_other = self - other   # accuracy difference (self - other)
   ) %>%
-  select(.chain, .iteration, .draw, task_type, diff_self_other) 
+  select(.chain, .iteration, .draw, task_type, diff_self_other)  # keep chain info plus the difference
 
 # Reshape task_type into wide format with prefix
+# Reshape: one column per task, prefixed with "diff_so_"
 df_acc_pop_diff_wide <- diff_draws %>%
-  pivot_wider(
-    names_from = task_type,
-    values_from = diff_self_other,
-    names_prefix = "diff_so_" 
+  pivot_wider(                 # put self/other side by side
+    names_from = task_type,   # one column per task type
+    values_from = diff_self_other,   # the difference values fill the columns
+    names_prefix = "diff_so_"   # prefix the column names with "diff_so_"
   )
 
-
-df_acc_pop_diff_wide
+df_acc_pop_diff_wide   # show the wide-format difference draws
 ```
 
 ```{r}
 # Population‑level fixed effects: condition‑wise response distribution
+# Posterior distribution of the population-level logit accuracy of each condition
 df_acc_pop <- m2_acc %>%
-  tidybayes::gather_draws(`b_.*`, regex = TRUE) %>%
-  dplyr::rename(term = .variable,
+  tidybayes::gather_draws(`b_.*`, regex = TRUE) %>%  # draw the posterior of every b_ (fixed-effect) parameter
+  dplyr::rename(term = .variable,    # rename tidybayes columns
                 pop_mean = .value) %>%  
   dplyr::ungroup() %>%
-  dplyr::mutate(term = gsub("b_", "", term))%>%
+  dplyr::mutate(term = gsub("b_", "", term)) %>%   # strip the "b_" prefix from the parameter names
   tidyr::pivot_wider(names_from = c(term), values_from = pop_mean) %>%   # long to wide
   # Calculate model predictions for each condition
   dplyr::mutate(
-    self_overlap = Intercept, 
-    other_overlap = Intercept  + associationother,
-    self_irrelevant = Intercept  + task_typeirrelevant,
-    other_irrelevant = Intercept  + task_typeirrelevant + associationother +`associationother:task_typeirrelevant` ,
-    self_relevant = Intercept  + task_typerelevant,
-    other_relevant = Intercept + associationother + task_typerelevant + `associationother:task_typerelevant`
+    self_overlap = Intercept,   # self + identity-choice (both baselines)
+    other_overlap = Intercept  + associationother,   # other + identity-choice
+    self_irrelevant = Intercept  + task_typeirrelevant,   # self + identity-irrelevant
+    other_irrelevant = Intercept  + task_typeirrelevant + associationother +`associationother:task_typeirrelevant` ,   # other + identity-irrelevant
+    self_relevant = Intercept  + task_typerelevant,   # self + identity-relevant
+    other_relevant = Intercept + associationother + task_typerelevant + `associationother:task_typerelevant`   # other + identity-relevant
     )%>%
-  dplyr::select(`.chain`, `.iteration`, `.draw`,
+  dplyr::select(`.chain`, `.iteration`, `.draw`,     # keep chain/draw info plus the condition columns
                 self_overlap, other_overlap,
                 self_irrelevant, other_irrelevant,
                 self_relevant, other_relevant) %>%
   # wide to long
   tidyr::pivot_longer(cols = self_overlap:other_relevant, names_to = "term", values_to =  "value") %>%  
-  dplyr::mutate(term = factor(term, levels = c(
+  dplyr::mutate(term = factor(term, levels = c(  # fix the display order of the conditions
     'self_overlap', 'other_overlap', 
     'self_irrelevant', 'other_irrelevant', 
     'self_relevant', 'other_relevant'
@@ -342,297 +378,337 @@ df_acc_pop <- m2_acc %>%
 df_acc_pop
 ```
 
+**logit accuracy difference**
+
 ```{r}
 # Population‑level fixed effects: posterior distribution of condition differences
+# Posterior distribution of the accuracy difference (self - other) per task
 df_acc_pop_diff_wide <- df_acc_pop %>%
-  tidyr::pivot_wider(names_from = c(term), values_from = value) %>%
+  tidyr::pivot_wider(names_from = c(term), values_from = value) %>%  # back to wide format
   dplyr::mutate(
-    diff_so_overlap = self_overlap - other_overlap,
-    diff_so_irrelevant = self_irrelevant - other_irrelevant,
-    diff_so_relevant = self_relevant - other_relevant
+    diff_so_overlap = self_overlap - other_overlap,   # accuracy difference in the identity-choice task
+    diff_so_irrelevant = self_irrelevant - other_irrelevant,   # accuracy difference in the identity-irrelevant task
+    diff_so_relevant = self_relevant - other_relevant   # accuracy difference in the identity-relevant task
   ) %>%
-  dplyr::select(`.chain`, `.iteration`, `.draw`, diff_so_overlap,
-    diff_so_irrelevant, diff_so_relevant)
+  dplyr::select(`.chain`, `.iteration`, `.draw`, diff_so_overlap,   # keep only the difference columns
+    diff_so_irrelevant, diff_so_relevant)   # (positive = self advantage)
 
-df_acc_pop_diff_wide
+df_acc_pop_diff_wide   # show the wide-format difference draws
 ```
 
 ```{r}
 # Population‑level fixed effects: posterior‑distribution descriptive statistics
+# Posterior summary statistics (median, 95% HDI, pd) for each condition's accuracy
 df_acc_fixed <- df_acc_pop%>%
-  tidyr::pivot_wider(.,
-                     id_cols = c('.chain', '.iteration', '.draw'),
-                     names_from = term ) %>%
-  dplyr::select(-c('.chain', '.iteration', '.draw')) %>%
-  bayestestR::describe_posterior(.,
-                                 ci = 0.95,
-                                 ci_method = 'hdi',
-                                 test = c("p_direction", "p_significance"),
-                                 centrality = "median") %>%
-  tidyr::separate(Parameter, c('association', 'task_type')) %>%
-  dplyr::mutate(association = factor(association, levels = c('self', 'other')),
-                task_type = factor(task_type, levels = c('overlap','irrelevant', 'relevant')))
+  tidyr::pivot_wider(.,                       # one column per condition
+                     id_cols = c('.chain', '.iteration', '.draw'),   # keep chain info as IDs
+                     names_from = term ) %>%                   # create one column per condition
+  dplyr::select(-c('.chain', '.iteration', '.draw')) %>%   # drop chain columns before summarizing
+  bayestestR::describe_posterior(.,           # summarize the posterior of each condition
+                                 ci = 0.95,                   # 95% credible interval
+                                 ci_method = 'hdi',          # highest-density interval
+                                 test = c("p_direction", "p_significance"),   # probability of direction & of significance
+                                 centrality = "median") %>%               # use the median as the point estimate
+  tidyr::separate(Parameter, c('association', 'task_type')) %>%  # split "self_overlap" into two factor columns
+  dplyr::mutate(association = factor(association, levels = c('self', 'other')),   # restore factor levels
+                task_type = factor(task_type, levels = c('overlap','irrelevant', 'relevant')))  # restore factor levels
 
-summary(df_acc_fixed)
+summary(df_acc_fixed)   # print the summary table
 ```
 
 
 ```{r}
 # Statistical inference using the sexit framework
+# Same sexit test for the accuracy differences
 bayestestR::sexit(df_acc_pop_diff_wide[,c(4:6)])
+```
+
+**BF**
+
+```{r}
+# Compute Bayes factors
+# Savage-Dickey Bayes factor for the simple effect:
+
+# self-other RT effect in the identity-choice task
+hyp_choice <- hypothesis(m2_acc, "associationother = 0")
+BF01_choice <- hyp_choice$hypothesis$Evid.Ratio   # evidence for the null vs. the alternative
+BF10_choice <- 1 / BF01_choice                    # invert to obtain BF10
+print(BF10_choice)
+
+# Simple effect in the identity-relevant task = main effect + interaction contrast (not change of task, so, need add main effect)
+hyp_relevant <- hypothesis(m2_acc, "associationother + associationother:task_typerelevant = 0")
+BF01_relevant <- hyp_relevant$hypothesis$Evid.Ratio   # evidence for the null
+BF10_relevant <- 1 / BF01_relevant                    # BF10
+print(BF10_relevant)
+
+# Simple effect in the identity-irrelevant task = main effect + interaction contrast
+hyp_irrelevant <- hypothesis(m2_acc, "associationother + associationother:task_typeirrelevant = 0")
+BF01_irrelevant <- hyp_irrelevant$hypothesis$Evid.Ratio   # evidence for the null
+BF10_irrelevant <- 1 / BF01_irrelevant                    # BF10
+print(BF10_irrelevant)
 ```
 
 ## 1.3 Result Visualization
 
 ```{r}
+# Stack the per-group aggregate datasets (needed for the raw descriptive panels)
 df_all <- dplyr::bind_rows(data_shape_rt_acc, data_color_rt_acc)
 # ==================================================
 # Data preprocessing
 # ==================================================
 # ---- RT difference data（other - self） ----
+# Stack the three RT-difference columns into long format for plotting
 df_rt_pop_diff <- df_rt_pop_diff_wide %>%
   tidyr::pivot_longer(
-    cols = diff_os_overlap:diff_os_relevant,
-    names_to = "term_diff",
-    values_to = "value"
+    cols = diff_os_overlap:diff_os_relevant,   # the three task difference columns
+    names_to = "term_diff",   # new column holding the old column names
+    values_to = "value"   # new column holding the difference values
   ) %>%
   dplyr::mutate(
-    term_diff = factor(
+    term_diff = factor(                       # recode column names into readable task labels
       term_diff,
-      levels = c("diff_os_overlap", "diff_os_relevant", "diff_os_irrelevant"),
-      labels = c("identity-choice", "identity-relevant", "identity-irrelevant")
+      levels = c("diff_os_overlap", "diff_os_relevant", "diff_os_irrelevant"),   # original column names
+      labels = c("identity-choice", "identity-relevant", "identity-irrelevant")   # readable task labels
     )
   )
 
 # ---- ACC difference data（self - other） ----
+# Stack the three accuracy-difference columns into long format for plotting
 df_acc_pop_diff <- df_acc_pop_diff_wide %>%
   tidyr::pivot_longer(
-    cols = diff_so_overlap:diff_so_irrelevant,
-    names_to = "term_diff",
-    values_to = "value"
+    cols = diff_so_overlap:diff_so_irrelevant,   # the three task difference columns
+    names_to = "term_diff",   # new column holding the old column names
+    values_to = "value"   # new column holding the difference values
   ) %>%
   dplyr::mutate(
-    term_diff = factor(
+    term_diff = factor(                       # recode column names into readable task labels
       term_diff,
-      levels = c("diff_so_overlap", "diff_so_relevant", "diff_so_irrelevant"),
-      labels = c("identity-choice", "identity-relevant", "identity-irrelevant")
+      levels = c("diff_so_overlap", "diff_so_relevant", "diff_so_irrelevant"),   # original column names
+      labels = c("identity-choice", "identity-relevant", "identity-irrelevant")   # readable task labels
     )
   )
 
 # ---- Raw behavioral dataset ----
+# Prepare the raw behavioral dataset for the descriptive panels
 df_behavior_long <- df_all %>%
-  dplyr::filter(part %in% c("RDK_shape","RDK_color","RDK_overlap")) %>%
+  dplyr::filter(part %in% c("RDK_shape","RDK_color","RDK_overlap")) %>%  # keep formal task rows
   dplyr::mutate(
-    disc_layer = dplyr::case_when(
-      group == "shape" & part == "RDK_shape" ~ "identity-relevant",
-      group == "shape" & part == "RDK_color" ~ "identity-irrelevant",
-      group == "color" & part == "RDK_color" ~ "identity-relevant",
-      group == "color" & part == "RDK_shape" ~ "identity-irrelevant",
-      part == "RDK_overlap" ~ "identity-choice",
-      TRUE ~ NA_character_
+    disc_layer = dplyr::case_when(   # map each group x task combination onto its task-type label
+      group == "shape" & part == "RDK_shape" ~ "identity-relevant",   # judging the associated dimension
+      group == "shape" & part == "RDK_color" ~ "identity-irrelevant", # judging the other dimension
+      group == "color" & part == "RDK_color" ~ "identity-relevant",   # judging the associated dimension
+      group == "color" & part == "RDK_shape" ~ "identity-irrelevant", # judging the other dimension
+      part == "RDK_overlap" ~ "identity-choice",   # identity as the task goal
+      TRUE ~ NA_character_   # fallback: unmapped rows get NA
     )) %>%
-  tidyr::drop_na(disc_layer) %>%
+  tidyr::drop_na(disc_layer) %>%   # drop rows that did not map onto a task type
   dplyr::mutate(
-    disc_layer = factor(disc_layer,
-                        levels = c("identity-choice", "identity-relevant", "identity-irrelevant"))
+    disc_layer = factor(disc_layer,   # fix the display order of the task types
+                        levels = c("identity-choice", "identity-relevant", "identity-irrelevant"))   # display order
   )
 
 # ==================================================
 # Color palette definition
 # ==================================================
-fill_palette_left   <- c("other" = "#A0C0D8", "self" = "#F0A8A8")
-colour_palette_left <- c("other" = "#3A6B8C", "self" = "#C84848")
+fill_palette_left   <- c("other" = "#A0C0D8", "self" = "#F0A8A8")   # soft fill colors for the raw panels
+colour_palette_left <- c("other" = "#3A6B8C", "self" = "#C84848")   # darker line colors for the raw panels
 
-fill_palette_right <- c("TRUE" = "#C9A6D9", "FALSE" = "#96C7C9")
-line_col_right     <- "#5D3A7A"
+fill_palette_right <- c("TRUE" = "#C9A6D9", "FALSE" = "#96C7C9")    # fill colors for the difference panels
+line_col_right     <- "#5D3A7A"                                     # interval/point color for the difference panels
 
 # Global plotting parameters
-dodge_width <- 0.75
-slab_height <- 0.65
-y_expand <- 0.9
+dodge_width <- 0.75   # horizontal offset between the self/other slabs
+slab_height <- 0.65   # thickness of the half-violin slabs
+y_expand <- 0.9       # extra space above/below the y-axis categories
 
 # ==================================================
 # Raw RT distribution
 # ==================================================
+# Panel a: raw RT distribution per task, colored by association
 p_rt_raw <- df_behavior_long %>%
-  ggplot2::ggplot(ggplot2::aes(x = rt, y = disc_layer, fill = association)) +
-  ggdist::stat_slab(
-    orientation = "horizontal",
-    adjust = 0.7,
-    alpha = 0.6,
-    side = "top",
+  ggplot2::ggplot(ggplot2::aes(x = rt, y = disc_layer, fill = association)) +  # RT per task, filled by association
+  ggdist::stat_slab(          # half-violin ("slab") of the observed distribution
+    orientation = "horizontal",   # tasks run along the y-axis
+    adjust = 0.7,             # kernel bandwidth adjustment
+    alpha = 0.6,              # slab transparency
+    side = "top",             # draw only the upper half of the violin
     height = slab_height,
-    position = ggplot2::position_dodge(width = dodge_width)
+    position = ggplot2::position_dodge(width = dodge_width)  # separate the self/other slabs
   ) +
-  ggplot2::geom_boxplot(
+  ggplot2::geom_boxplot(      # small boxplot overlaid on each slab
     position = ggplot2::position_dodge(width = dodge_width),
     width = 0.12,
-    outlier.shape = NA,
+    outlier.shape = NA,       # hide outliers (the slab already shows the full distribution)
     alpha = 0.7
   ) +
-  ggplot2::scale_fill_manual(values = fill_palette_left) +
-  ggplot2::scale_colour_manual(values = colour_palette_left) +
+  ggplot2::scale_fill_manual(values = fill_palette_left) +      # apply the fill colors
+  ggplot2::scale_colour_manual(values = colour_palette_left) +  # apply the line colors
   ggplot2::scale_y_discrete(
-    expand = ggplot2::expansion(add = c(y_expand, y_expand))
+    expand = ggplot2::expansion(add = c(y_expand, y_expand))   # pad the y-axis so slabs are not clipped
   ) +
-  ggplot2::labs(x = "RT (ms)", y = "", tag = "a") +
-  papaja::theme_apa() +
+  ggplot2::labs(x = "RT (ms)", y = "", tag = "a") +  # panel tag "a"
+  papaja::theme_apa() +       # APA-styled theme
   ggplot2::theme(
-    plot.margin = ggplot2::unit(c(1,1,0.5,0.2), "cm"),
-    axis.title.x = ggplot2::element_text(size = 16, margin = ggplot2::margin(t=8)),
-    axis.text.x = ggplot2::element_text(size=14),
-    axis.text.y = ggplot2::element_text(size=15),
-    legend.position = "none",
-    plot.tag = ggplot2::element_text(size=18, face="bold", hjust=0, vjust=1),
-    plot.tag.position = c(0.02, 0.98)
+    plot.margin = ggplot2::unit(c(1,1,0.5,0.2), "cm"),   # panel margins
+    axis.title.x = ggplot2::element_text(size = 16, margin = ggplot2::margin(t=8)),   # x-axis title size
+    axis.text.x = ggplot2::element_text(size=14),   # x tick label size
+    axis.text.y = ggplot2::element_text(size=15),   # y tick label size
+    legend.position = "none",  # the legend is collected globally at the bottom of the combined figure
+    plot.tag = ggplot2::element_text(size=18, face="bold", hjust=0, vjust=1),   # panel tag style
+    plot.tag.position = c(0.02, 0.98)   # panel tag position (top-left corner)
   )
 
 # ==================================================
 # Posterior distribution of RT differences
 # ==================================================
+# Panel c: posterior distribution of the RT difference per task
 p_rt_diff <- df_rt_pop_diff %>%
   ggplot2::ggplot(
     ggplot2::aes(
-      x = value,
-      y = term_diff,
-      fill = ggplot2::after_stat(x > 0)
+      x = value,   # posterior difference values
+      y = term_diff,   # one row per task
+      fill = ggplot2::after_stat(x > 0)   # color by whether the difference is positive
     )
   ) +
-  tidybayes::stat_halfeye(
-    orientation = "horizontal",
+  tidybayes::stat_halfeye(   # half-eye: posterior density + interval + point
+    orientation = "horizontal",   # tasks run along the y-axis
     .height = slab_height,
     adjust = 1.2,
     alpha = 0.8,
-    interval_color = line_col_right,
-    point_color = line_col_right
+    interval_color = line_col_right,   # HDI interval color
+    point_color = line_col_right   # median point color
   ) +
-  ggplot2::geom_vline(xintercept = 0, linetype = "dashed", linewidth = 0.6) +
+  ggplot2::geom_vline(xintercept = 0, linetype = "dashed", linewidth = 0.6) +  # dashed line at no difference
   ggplot2::scale_fill_manual(
     values = fill_palette_right,
-    breaks = c(TRUE, FALSE),
-    name = "Difference",
-    labels = c("> 0 (self advantage)", "< 0 (other advantage)")
+    breaks = c(TRUE, FALSE),   # legend keys
+    name = "Difference",   # legend title
+    labels = c("> 0 (self advantage)", "< 0 (other advantage)")   # legend labels
   ) +
   ggplot2::scale_y_discrete(
-    expand = ggplot2::expansion(add = c(y_expand, y_expand))
+    expand = ggplot2::expansion(add = c(y_expand, y_expand))   # pad the y-axis so slabs are not clipped
   ) +
   ggplot2::labs(
-    x = "RT difference (other - self, ms)",
+    x = "RT difference (other - self, ms)",   # x-axis label
     y = "",
-    tag = "c"
+    tag = "c"   # panel tag "c"
   ) +
-  papaja::theme_apa() +
+  papaja::theme_apa() +       # APA-styled theme
   ggplot2::theme(
-    plot.margin = ggplot2::unit(c(1, 0.2, 0.5, 1), "cm"),
+    plot.margin = ggplot2::unit(c(1, 0.2, 0.5, 1), "cm"),   # panel margins
     axis.title.x = ggplot2::element_text(size = 16, margin = ggplot2::margin(t = 8)),
-    axis.text.x = ggplot2::element_text(size = 14),
-    axis.text.y = ggplot2::element_blank(),
-    legend.position = "none",
-    plot.tag = ggplot2::element_text(size = 18, face = "bold", hjust = 0, vjust = 1),
-    plot.tag.position = c(0.02, 0.98)
+    axis.text.x = ggplot2::element_text(size = 14),   # x tick label size
+    axis.text.y = ggplot2::element_blank(),   # hide y tick labels (task names shown only in the left panels)
+    legend.position = "none",  # the legend is collected globally at the bottom of the combined figure
+    plot.tag = ggplot2::element_text(size = 18, face = "bold", hjust = 0, vjust = 1),   # panel tag style
+    plot.tag.position = c(0.02, 0.98)   # panel tag position (top-left corner)
   )
 
 # ==================================================
 # Raw Accuracy distribution
 # ==================================================
+# Panel b: raw accuracy distribution per task, colored by association
 p_acc_raw <- df_behavior_long %>%
-  ggplot2::ggplot(ggplot2::aes(x = acc, y = disc_layer, fill = association)) +
-  ggdist::stat_slab(
-    orientation = "horizontal",
-    adjust = 0.7,
-    alpha = 0.6,
-    side = "top",
+  ggplot2::ggplot(ggplot2::aes(x = acc, y = disc_layer, fill = association)) +  # accuracy per task, filled by association
+  ggdist::stat_slab(          # half-violin ("slab") of the observed distribution
+    orientation = "horizontal",   # tasks run along the y-axis
+    adjust = 0.7,             # kernel bandwidth adjustment
+    alpha = 0.6,              # slab transparency
+    side = "top",             # draw only the upper half of the violin
     height = slab_height,
-    position = ggplot2::position_dodge(width = dodge_width)
+    position = ggplot2::position_dodge(width = dodge_width)  # separate the self/other slabs
   ) +
-  ggplot2::geom_boxplot(
+  ggplot2::geom_boxplot(      # small boxplot overlaid on each slab
     position = ggplot2::position_dodge(width = dodge_width),
     width = 0.12,
-    outlier.shape = NA,
+    outlier.shape = NA,       # hide outliers (the slab already shows the full distribution)
     alpha = 0.7
   ) +
-  ggplot2::scale_fill_manual(values = fill_palette_left) +
-  ggplot2::scale_colour_manual(values = colour_palette_left) +
+  ggplot2::scale_fill_manual(values = fill_palette_left) +      # apply the fill colors
+  ggplot2::scale_colour_manual(values = colour_palette_left) +  # apply the line colors
   ggplot2::scale_y_discrete(
-    expand = ggplot2::expansion(add = c(y_expand, y_expand))
+    expand = ggplot2::expansion(add = c(y_expand, y_expand))   # pad the y-axis so slabs are not clipped
   ) +
-  ggplot2::labs(x = "Accuracy", y = "", tag = "b") +
-  papaja::theme_apa() +
+  ggplot2::labs(x = "Accuracy", y = "", tag = "b") +  # panel tag "b"
+  papaja::theme_apa() +       # APA-styled theme
   ggplot2::theme(
-    plot.margin = ggplot2::unit(c(0.5,1,1,0.2), "cm"),
-    axis.title.x = ggplot2::element_text(size =16, margin = ggplot2::margin(t=8)),
-    axis.text.x = ggplot2::element_text(size=14),
-    axis.text.y = ggplot2::element_text(size=15),
-    legend.position = "none",
-    plot.tag = ggplot2::element_text(size=18, face="bold", hjust=0, vjust=1),
-    plot.tag.position = c(0.02, 0.98)
+    plot.margin = ggplot2::unit(c(0.5,1,1,0.2), "cm"),   # panel margins
+    axis.title.x = ggplot2::element_text(size =16, margin = ggplot2::margin(t=8)),   # x-axis title size
+    axis.text.x = ggplot2::element_text(size=14),   # x tick label size
+    axis.text.y = ggplot2::element_text(size=15),   # y tick label size
+    legend.position = "none",  # the legend is collected globally at the bottom of the combined figure
+    plot.tag = ggplot2::element_text(size=18, face="bold", hjust=0, vjust=1),   # panel tag style
+    plot.tag.position = c(0.02, 0.98)   # panel tag position (top-left corner)
   )
 
 # ==================================================
 # Posterior distribution of ACC differences
 # ==================================================
+# Panel d: posterior distribution of the accuracy difference per task
 p_acc_diff <- df_acc_pop_diff %>%
   ggplot2::ggplot(
     ggplot2::aes(
-      x = value,
-      y = term_diff,
-      fill = ggplot2::after_stat(x > 0)
+      x = value,   # posterior difference values
+      y = term_diff,   # one row per task
+      fill = ggplot2::after_stat(x > 0)   # color by whether the difference is positive
     )
   ) +
-  tidybayes::stat_halfeye(
-    orientation = "horizontal",
+  tidybayes::stat_halfeye(   # half-eye: posterior density + interval + point
+    orientation = "horizontal",   # tasks run along the y-axis
     .height = slab_height,
     adjust = 1.2,
     alpha = 0.8,
-    interval_color = line_col_right,
-    point_color = line_col_right
+    interval_color = line_col_right,   # HDI interval color
+    point_color = line_col_right   # median point color
   ) +
-  ggplot2::geom_vline(xintercept = 0, linetype = "dashed", linewidth = 0.6) +
+  ggplot2::geom_vline(xintercept = 0, linetype = "dashed", linewidth = 0.6) +  # dashed line at no difference
   ggplot2::scale_fill_manual(
     values = fill_palette_right,
-    breaks = c(TRUE, FALSE),
-    name = "Difference",
-    labels = c("> 0 (self advantage)", "< 0 (other advantage)")
+    breaks = c(TRUE, FALSE),   # legend keys
+    name = "Difference",   # legend title
+    labels = c("> 0 (self advantage)", "< 0 (other advantage)")   # legend labels
   ) +
   ggplot2::scale_y_discrete(
-    expand = ggplot2::expansion(add = c(y_expand, y_expand))
+    expand = ggplot2::expansion(add = c(y_expand, y_expand))   # pad the y-axis so slabs are not clipped
   ) +
   ggplot2::labs(
-    x = "ACC difference (self - other)",
+    x = "ACC difference (self - other)",   # x-axis label
     y = "",
-    tag = "d"
+    tag = "d"   # panel tag "d"
   ) +
-  papaja::theme_apa() +
+  papaja::theme_apa() +       # APA-styled theme
   ggplot2::theme(
-    plot.margin = ggplot2::unit(c(0.5,0.2,1,1), "cm"),
+    plot.margin = ggplot2::unit(c(0.5,0.2,1,1), "cm"),   # panel margins
     axis.title.x = ggplot2::element_text(size = 16, margin = ggplot2::margin(t = 8)),
-    axis.text.x = ggplot2::element_text(size = 14),
-    axis.text.y = ggplot2::element_blank(),
-    legend.position = "none",
-    plot.tag = ggplot2::element_text(size = 18, face = "bold", hjust = 0, vjust = 1),
-    plot.tag.position = c(0.02, 0.98)
+    axis.text.x = ggplot2::element_text(size = 14),   # x tick label size
+    axis.text.y = ggplot2::element_blank(),   # hide y tick labels (task names shown only in the left panels)
+    legend.position = "none",  # the legend is collected globally at the bottom of the combined figure
+    plot.tag = ggplot2::element_text(size = 18, face = "bold", hjust = 0, vjust = 1),   # panel tag style
+    plot.tag.position = c(0.02, 0.98)   # panel tag position (top-left corner)
   )
 
 # ==================================================
 # Assemble subplots & collect single global legend
 # ==================================================
+# Assemble the four panels into a 2x2 figure
 fig_combined <- p_rt_raw + p_rt_diff +
-  p_acc_raw + p_acc_diff +
-  patchwork::plot_layout(
-    nrow = 2, ncol = 2,
-    widths = c(1.1, 0.9),
-    heights = c(1, 1),
-    guides = "collect"
+  p_acc_raw + p_acc_diff +   # panels a-d in reading order
+  patchwork::plot_layout(   # arrange the 2x2 grid
+    nrow = 2, ncol = 2,   # 2 rows x 2 columns
+    widths = c(1.1, 0.9),   # raw panels slightly wider than difference panels
+    heights = c(1, 1),   # equal row heights
+    guides = "collect"   # merge the legends into one
   ) &
   ggplot2::theme(
-    legend.position = "bottom",
-    legend.box = "horizontal",
-    legend.text  = ggplot2::element_text(size = 13),
-    legend.key.size = ggplot2::unit(0.6, "cm")
+    legend.position = "bottom",   # place the collected legend below the figure
+    legend.box = "horizontal",   # lay the legends out horizontally
+    legend.text  = ggplot2::element_text(size = 13),   # legend text size
+    legend.key.size = ggplot2::unit(0.6, "cm")   # legend key size
   )
 
-print(fig_combined)
+print(fig_combined)   # render the combined figure
 
+# Save the combined figure at print resolution
 ggsave("fig2_behavior.png", fig_combined, width = 15, height = 10, dpi = 300)
 ```
 
@@ -640,50 +716,56 @@ ggsave("fig2_behavior.png", fig_combined, width = 15, height = 10, dpi = 300)
 ## 2.1 RT
 ### 1. Model Fitting
 ```{r warning=FALSE}
+# Confound check: RT ~ association x group x task_type
+# (tests whether the associated dimension - shape vs. color - moderates the effects)
 m3_rt <- data_all %>%
-  dplyr::filter(correct == 1) %>%
+  dplyr::filter(correct == 1) %>%     # RT models use correct trials only
   brms::brm(
+    # Fixed effects: three-way interaction with group; random slopes per participant
     rt ~ association*group*task_type + (1 + association*task_type|subj_idx),
     data = .,
-    family=lognormal(),
-    chains = 4,   
-    warmup = 500,  
-    iter = 2000,  
-    thin = 1, 
-    control = list(adapt_delta = .95), 
-    cores = parallel::detectCores(), 
-    backend = 'cmdstanr', 
-    save_pars = save_pars(all = TRUE),
-    file = file.path(curDir, "glmmModels/m3_rt") 
+    family=lognormal(),               # RTs are positively skewed -> lognormal likelihood
+    chains = 4,                       # 4 independent MCMC chains
+    warmup = 500,                     # 500 warm-up (burn-in) iterations per chain
+    iter = 2000,                      # 2000 total iterations per chain
+    thin = 1,                         # keep every sample (no thinning)
+    control = list(adapt_delta = .95),  # higher target acceptance rate to avoid divergent transitions
+    cores = parallel::detectCores(),  # use all available CPU cores
+    backend = 'cmdstanr',             # sample with the cmdstanr backend
+    save_pars = save_pars(all = TRUE),  # save all model parameters
+    file = file.path(curDir, "glmmModels/m3_rt")  # cache the fitted model to disk
 )
 ```
 ### 2. Model Evaluation
 ```{r}
+# Inspect the confound-check model: Rhat, ESS, and posterior summaries
 summary(m3_rt)
 ```
 
 ## 2.2 ACC
 ### 1. Model Fitting
 ```{r warning=FALSE}
+# Confound check: accuracy ~ association x group x task_type
 m4_acc <- data_all %>%
-  # dplyr::mutate(correct = ifelse(correct == "true", 1, 0)) %>%
   brms::brm(
-    correct ~ association*group*task_type,
+    # Three-way interaction model for the confound check
+    correct ~ association*group*task_type + (1 + association*task_type|subj_idx),
     data = ., 
-    family = "bernoulli",
-    chains = 4,   
-    warmup = 500,  
-    iter = 2000,  
-    thin = 1, 
-    control = list(adapt_delta = .95),
-    cores = parallel::detectCores(),
-    backend = 'cmdstanr',
-    save_pars = save_pars(all = TRUE),
-    file = file.path(curDir, "glmmModels/m4_acc")
+    family = "bernoulli",             # binary accuracy -> Bernoulli likelihood (logit link)
+    chains = 4,                       # 4 independent MCMC chains
+    warmup = 500,                     # 500 warm-up (burn-in) iterations per chain
+    iter = 2000,                      # 2000 total iterations per chain
+    thin = 1,                         # keep every sample (no thinning)
+    control = list(adapt_delta = .95),  # higher target acceptance rate to avoid divergent transitions
+    cores = parallel::detectCores(),  # use all available CPU cores
+    backend = 'cmdstanr',             # sample with the cmdstanr backend
+    save_pars = save_pars(all = TRUE),  # save all model parameters
+    file = file.path(curDir, "glmmModels/m4_acc")  # cache the fitted model to disk
 )
 ```
 
 ### 2. Model Evaluation
 ```{r}
+# Inspect the confound-check model: Rhat, ESS, and posterior summaries
 summary(m4_acc)
 ```

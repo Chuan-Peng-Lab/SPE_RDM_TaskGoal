@@ -1,29 +1,32 @@
 **---
 title: "Data Claening"
-output: html_notebook
 ---
 
 ```{r}
+# Clear the workspace so the script starts from a clean state
 rm(list = ls())
 ```
 
 **Load required packages**
 ```{r}
 # if (.Platform$OS.type == 'windows') {
-#         Sys.setlocale(category = 'LC_ALL','en_US.UTF-8')  
-# } 
+#         Sys.setlocale(category = 'LC_ALL','en_US.UTF-8')
+# }
 # Configure R packages
+# pacman streamlines package management: it installs missing packages and attaches them in one call
 if (!require(pacman)){
-        install.packages("pacman")
-        library(pacman)
+        install.packages("pacman")  # install pacman itself if not yet available
+        library(pacman)             # attach it
 }
 
+# Load all packages used in the cleaning pipeline
 pacman::p_load(
   "tidyverse", "ggplot2", "cowplot", "bruceR","ggstatsplot", "papaja",
   "palmerpenguins", "dplyr", "patchwork", "RColorBrewer","reader"
 )
 
-source("Functions/R_rainclouds.R")
+# Source the custom raincloud-plot helper functions (used for later visualization)
+# source("Functions/R_rainclouds.R")
 ```
 
 ## 1. Read data
@@ -31,139 +34,149 @@ source("Functions/R_rainclouds.R")
 **Read raw data files under target directory**
 
 ```{r}
-# Set parent path of target folder
+# Set the path of the folder holding the raw experimental data
 parent_folder <- "../../3_Data/RawData/"
 
-# Create empty list to store all file paths
+# Create an empty vector to store all file paths
 file_list <- c()
 
+# List every raw per-participant file (names like "exp3_subj_7.csv")
 file_list <- list.files(
     path = parent_folder,
-    pattern = "*exp3_subj.*\\.csv$", 
-    full.names = TRUE
+    pattern = "*exp3_subj.*\\.csv$",  # regex: contains "exp3_subj." and ends with ".csv"
+    full.names = TRUE                 # return full paths rather than bare filenames
   )
 
-# Create an empty list to store all datasets
+# Create an empty list to store the loaded datasets
 df_list_1 <- list()
 
-# Read files one by one and store (use original filename as list element name)
+# Read each file and store it in the list (the filename without extension is the element name)
 for (file in file_list) {
-  # Get filename without file extension
-  file_name <- tools::file_path_sans_ext(basename(file))  
-  # Store dataset into lis
+  # Get the filename without path and without the .csv extension
+  file_name <- tools::file_path_sans_ext(basename(file))
+  # tryCatch keeps the loop running even if a single file fails to load
   tryCatch({
     df_list_1[[file_name]] <- read.csv(file)
   })
 }
 
-# Check number and names of loaded files
+# Report how many files were loaded and their names
 cat("Total loaded files:", length(df_list_1), "\n")
 print(names(df_list_1))
 ```
 ## 2. Data cleaning
 
 ```{r}
-# Create output folder if it does not exist
+# Create the output folder if it does not already exist
 output_path <- "../../3_Data/CleanData"
 if (!dir.exists(output_path)) {
-  dir.create(output_path, recursive = TRUE)
+  dir.create(output_path, recursive = TRUE)  # recursive = also create missing parent folders
 }
 
-# Process each dataset in loop
+# Clean each participant's raw dataset in a loop
 for (file_name in names(df_list_1)) {
-  data <- df_list_1[[file_name]]
+  data <- df_list_1[[file_name]]   # the current participant's raw data
 
-  # Extract participant information
+  # Extract the demographic info from the survey part (collected at the start of the experiment)
   participant_info <- data[data$part == "survey", "response"]
-  participant_info <- gsub("[{}\"]", "", participant_info) # 去掉多余的字符
+  # Strip braces and quotes so only plain "key:value" pairs remain
+  participant_info <- gsub("[{}\"]", "", participant_info)
+  # Split the string on commas into individual "key:value" entries
   info_list <- strsplit(participant_info, ",")[[1]]
 
-  # Create new dataframe for participant metadata
+  # Create an empty dataframe that will hold this participant's metadata
   participant_data <- data.frame(
-    subj_idx = file_name,
+    subj_idx = file_name,          # placeholder; replaced with a numeric ID below
     Sex = as.character(NA),
     Age = as.numeric(NA),
     Handedness = as.character(NA),
     Color_blindness = as.character(NA),
     stringsAsFactors = FALSE
   )
-  
-  # Split character string by underscore
+
+  # Split the filename (e.g. "exp3_subj_7") by underscore
   split_data <- strsplit(participant_data$subj_idx, "_")
+  # Keep only the digits of the last element (e.g. "7") and convert to a numeric participant ID
   participant_data$subj_idx <- as.numeric(lapply(split_data, function(x) {
-    gsub("[^0-9]", "", x[[3]]) 
+    gsub("[^0-9]", "", x[[3]])   # strip all non-digit characters
   }))
 
+  # Loop over the "key:value" pairs and fill the metadata dataframe
   for (info in info_list) {
-    key_value <- strsplit(info, ":")[[1]]
-    key <- trimws(key_value[1])
-    value <- trimws(key_value[2])
+    key_value <- strsplit(info, ":")[[1]]   # split each entry on the colon
+    key <- trimws(key_value[1])             # trim whitespace from the key
+    value <- trimws(key_value[2])           # trim whitespace from the value
     if (key == "sex"){
+      # Recode the Chinese sex labels into numeric codes: male = 1, female = 2
       participant_data$Sex <- switch(
         value, "男" = 1, "女" = 2
       )
     }
-    if (key == "age") participant_data$Age <- as.numeric(value)
-    if (key == "hands") participant_data$Handedness <- value
-    if (key == "color_blindness") participant_data$Color_blindness <- value
+    if (key == "age") participant_data$Age <- as.numeric(value)              # store age as a number
+    if (key == "hands") participant_data$Handedness <- value                 # store handedness as text
+    if (key == "color_blindness") participant_data$Color_blindness <- value  # store color-blindness self-report
   }
 
-  # Extract behavioral data
+  # Extract the behavioral trials of the three choice tasks
   behavior_data <- data[
-    data$part %in% c("RDK_overlap","RDK_color","RDK_shape"),
+    data$part %in% c("RDK_overlap","RDK_color","RDK_shape"),  # keep only choice-task rows
     c(
-      "part", "rt", "response", "correct", "dot_color","dot_shape", 
-      "association"
+      "part", "rt", "response", "correct", "dot_color","dot_shape",
+      "association"                                            # columns needed downstream
     )
   ]
-  
-  # Extract formal experimental trials
+
+  # Extract the formal trials by dropping the first 16 (practice) trials of each task
   official_trials <- do.call(
-  rbind,
+  rbind,   # row-bind the per-task results into a single dataframe
   lapply(unique(behavior_data$part), function(part) {
-    part_data <- behavior_data[behavior_data$part == part, ]
+    part_data <- behavior_data[behavior_data$part == part, ]  # trials of one task
     if (part %in% c("RDK_overlap", "RDK_color", "RDK_shape")) {
-      return(part_data[-(1:16), ]) 
+      return(part_data[-(1:16), ])   # remove rows 1-16 (the practice trials)
     } else {
       return(NULL)
     }
   })
 )
 
-  # Combine participant metadata and behavioral data
+  # Column-bind the participant metadata with the cleaned behavioral trials
   final_data <- cbind(participant_data, official_trials)
 
-  # Export cleaned dataset to CSV
+  # Export the cleaned per-participant dataset to CSV
   output_file <- file.path(output_path, paste0(file_name, "_Clean.csv"))
-  write.csv(final_data, output_file, row.names = FALSE)
+  write.csv(final_data, output_file, row.names = FALSE)  # no extra row-index column
 }
 ```
 
 **Read cleaned datasets**
 
 ```{r message=FALSE}
-# Set relative path for target folder
+# Set the path of the folder holding the cleaned per-participant files
 folder_path <- "../../3_Data/CleanData"
 
-# List all CSV files matching pattern "*exp3_subj_*.csv"
+# List all cleaned CSV files matching the pattern "*exp3_subj_*.csv"
 file_list <- list.files(
   path = folder_path,
   pattern = "*exp3_subj_.*\\.csv$", full.names = TRUE
 )
 
-# Create empty list to store datasets
+# Create an empty list to store the cleaned datasets
 df_list_1 <- list()
 
+# Read every cleaned file and stack them into a single dataframe
 for (file in file_list) {
-  file_name <- tools::file_path_sans_ext(basename(file))
+  file_name <- tools::file_path_sans_ext(basename(file))  # filename without path/extension
+  # Read with explicit column types: "correct" as logical, everything else guessed automatically
   df <- read_csv(file, col_types = cols(
     correct = col_logical(),
-    .default = col_guess() 
+    .default = col_guess()
   ))
-  df_list_1[[file_name]] <- df
+  df_list_1[[file_name]] <- df   # store the dataset under its filename
 }
+# Vertically stack all per-participant datasets into one trial-level dataframe
 data <- dplyr::bind_rows(df_list_1)
 
+# Remove intermediate objects to keep the workspace tidy
 rm(participant_info, info_list, participant_data, split_data,
    behavior_data, official_trials, final_data, output_file, file, file_list,
    file_name, folder_path, info, key, key_value, value)
@@ -171,73 +184,75 @@ rm(participant_info, info_list, participant_data, split_data,
 
 ## 3. Demographic summary statistics
 ```{r}
+# Build a demographic summary table from the cleaned data
 df.basic <- data %>%
-  dplyr::select(subj_idx, Age, Sex) %>%
-  dplyr::distinct(subj_idx, .keep_all = TRUE) %>% 
+  dplyr::select(subj_idx, Age, Sex) %>%              # keep only ID, age, and sex columns
+  dplyr::distinct(subj_idx, .keep_all = TRUE) %>%    # one row per participant
   dplyr::mutate(
-    subj_group = dplyr::case_when(
+    subj_group = dplyr::case_when(                   # label participants by subject-number range
       subj_idx >= 1 & subj_idx <= 40 ~ "Group1 (motion)",
       subj_idx >= 40 & subj_idx <= 80 ~ "Group2 (color)",
     )
   ) %>%
-  # dplyr::group_by(subj_group) %>%
+  # dplyr::group_by(subj_group) %>%                  # (commented out: summary is computed over all participants)
   dplyr::summarise(
-    N = length(subj_idx), 
-    Nf = length(Sex[Sex == "2"]),
-    Nm = length(Sex[Sex == "1"]),
-    Age_mean = round(mean(Age, na.rm = TRUE), 2), 
-    Age_sd = round(sd(Age, na.rm = TRUE), 2), 
+    N = length(subj_idx),                            # total number of participants
+    Nf = length(Sex[Sex == "2"]),                    # number of women (coded 2)
+    Nm = length(Sex[Sex == "1"]),                    # number of men (coded 1)
+    Age_mean = round(mean(Age, na.rm = TRUE), 2),    # mean age (NAs excluded, rounded to 2 decimals)
+    Age_sd = round(sd(Age, na.rm = TRUE), 2),        # standard deviation of age
     .groups = "drop"
   )
 
-df.basic
+df.basic   # print the demographic summary
 ```
 ## 4. Further data preprocessing
 
 **Define functions to compute mean RT, accuracy, and self‑other difference (SPE)**
 
 ```{r}
-# Compute mean accuracy and reaction time
+# Compute mean RT (correct trials only) and accuracy per participant x task x association
 compute_rt_acc <- function(data){
   data <- data %>%
-    dplyr::filter(part %in% c("RDK_overlap","RDK_color","RDK_shape")) %>%
-    dplyr::filter(rt != -1) %>%
-    dplyr::group_by(subj_idx, part, association) %>%
+    dplyr::filter(part %in% c("RDK_overlap","RDK_color","RDK_shape")) %>%  # keep only formal choice-task trials
+    dplyr::filter(rt != -1) %>%                 # drop trials with missing RTs (coded as -1)
+    dplyr::group_by(subj_idx, part, association) %>%  # aggregate within each condition cell
     dplyr::summarise(
-      # rt = mean(rt, na.rm = TRUE), 
-      rt = mean(rt[correct == 1], na.rm = TRUE), 
-      acc = sum(correct == 1, na.rm = TRUE) / n()
+      # rt = mean(rt, na.rm = TRUE),             # (alternative: mean over all trials)
+      rt = mean(rt[correct == 1], na.rm = TRUE), # mean RT over correct trials only
+      acc = sum(correct == 1, na.rm = TRUE) / n()  # proportion of correct responses
     )
-  
+
   return(data)
 }
 
-# Compute self‑other difference (SPE effect size)
+# Compute the self-other difference (the SPE effect size) per participant and task
 compute_diff <- function(data, keepMatch=FALSE){
   group_vars <- if(keepMatch) {
-    c("subj_idx", "part")
+    c("subj_idx", "part")   # grouping variables used when keepMatch = TRUE
   } else {
-    c("subj_idx", "part")
+    c("subj_idx", "part")   # (both branches are identical here)
   }
-  
+
   data_agg <- data %>%
-    dplyr::filter(part %in% c("RDK_overlap","RDK_color","RDK_shape")) %>%
-    dplyr::group_by_at(group_vars) %>% 
+    dplyr::filter(part %in% c("RDK_overlap","RDK_color","RDK_shape")) %>%  # formal tasks only
+    dplyr::group_by_at(group_vars) %>%   # group by the chosen grouping variables
     dplyr::summarise(
+      # Widen the data: separate columns for the self and other conditions
       rt_other = mean(rt[association == "other"], na.rm = TRUE),
       rt_self = mean(rt[association == "self"], na.rm = TRUE),
       acc_other = mean(acc[association == "other"], na.rm = TRUE),
       acc_self = mean(acc[association == "self"], na.rm = TRUE),
       .groups = "drop"
     )
-  
-  # Calculate difference scores
+
+  # Calculate difference scores per participant and task
   data_result <- data_agg %>%
     dplyr::mutate(
-      rt_diff_os = rt_other - rt_self, # Positive value = self advantage (faster for self)
-      acc_diff_so = acc_self - acc_other # Positive value = self advantage (higher accuracy for self)
+      rt_diff_os = rt_other - rt_self,   # positive value = self advantage (faster for self)
+      acc_diff_so = acc_self - acc_other # positive value = self advantage (higher accuracy for self)
     )
-  
+
   return(data_result)
 }
 ```
@@ -245,59 +260,69 @@ compute_diff <- function(data, keepMatch=FALSE){
 **Extract shape‑group and color‑group datasets separately**
 
 ```{r}
+# Trial-level cleaning: keep only trials with plausible RTs (100-3000 ms, non-missing)
 data <- data %>%
-  dplyr::filter(rt >= 100 & rt <= 3000, !is.na(rt)) 
-# shape association group
+  dplyr::filter(rt >= 100 & rt <= 3000, !is.na(rt))
+
+# ---- Shape-associated group (participants 1-40) ----
 data1 <- data %>%
   dplyr::filter(
-    subj_idx %in% c( seq(1, 40))) %>% 
-  dplyr::mutate(correct = as.numeric(as.logical(correct))) %>%
-  dplyr::group_by(subj_idx, part) %>%
-  dplyr::mutate(subj_acc = mean(correct, na.rm = TRUE)) %>%
+    subj_idx %in% c( seq(1, 40))) %>%   # select participants of the shape group
+  dplyr::mutate(correct = as.numeric(as.logical(correct))) %>%  # recode logical to 0/1
+  dplyr::group_by(subj_idx, part) %>%        # group by participant and task
+  dplyr::mutate(subj_acc = mean(correct, na.rm = TRUE)) %>%  # overall accuracy per participant/task
   dplyr::ungroup()
 
 
+# Long-format trial-level dataset for the shape group
 data_shape <- data1 %>%
   dplyr::select(
-    subj_idx, rt, correct, part, response, association, dot_color, dot_shape
+    subj_idx, rt, correct, part, response, association, dot_color, dot_shape  # columns needed downstream
   ) %>%
-  dplyr::mutate(correct = as.numeric(as.logical(correct))) %>%
-  dplyr::mutate(rt = rt / 1000) %>%
-  dplyr::mutate(group = "shape") 
+  dplyr::mutate(correct = as.numeric(as.logical(correct))) %>%  # ensure 0/1 numeric coding
+  dplyr::mutate(rt = rt / 1000) %>%    # convert RT from milliseconds to seconds
+  dplyr::mutate(group = "shape")       # tag the dimension associated with identity
 
+# (commented out) alternative export of the shape-group dataset
 # output_file <- base::file.path(output_path, "data_motion.csv")
 # utils::write.csv(data_motion, output_file, row.names = FALSE)
 
 
+# Mean RT/accuracy per participant x task x association for the shape group
 data_shape_rt_acc <- compute_rt_acc(data1) %>%
-  dplyr::mutate(group = "shape") 
+  dplyr::mutate(group = "shape")
 
 
+# Self-other difference scores for the shape group
 data_shape_diff <- compute_diff(data_shape_rt_acc) %>%
-  dplyr::mutate(subj_idx = as.factor(subj_idx))
+  dplyr::mutate(subj_idx = as.factor(subj_idx))  # store the participant ID as a factor
 
-# Color
+# ---- Color-associated group (participants 41-80) ----
 data2 <- data %>%
   dplyr::filter(
-    subj_idx %in% c( seq(41, 80))) %>% 
-  dplyr::mutate(correct = as.numeric(as.logical(correct))) %>%
+    subj_idx %in% c( seq(41, 80))) %>%   # select participants of the color group
+  dplyr::mutate(correct = as.numeric(as.logical(correct))) %>%  # recode logical to 0/1
   dplyr::group_by(subj_idx, part) %>%
-  dplyr::mutate(subj_acc = mean(correct, na.rm = TRUE)) %>%
+  dplyr::mutate(subj_acc = mean(correct, na.rm = TRUE)) %>%  # overall accuracy per participant/task
   dplyr::ungroup()
 
+# Long-format trial-level dataset for the color group
 data_color <- data2 %>%
   dplyr::select(
     subj_idx, rt, correct, part, response, association, dot_color, dot_shape
   ) %>%
   dplyr::mutate(correct = as.numeric(as.logical(correct))) %>%
-  dplyr::mutate(rt = rt / 1000) %>%
-  dplyr::mutate(group = "color") 
+  dplyr::mutate(rt = rt / 1000) %>%    # convert RT from milliseconds to seconds
+  dplyr::mutate(group = "color")       # tag the dimension associated with identity
 
 
+# Mean RT/accuracy per participant x task x association for the color group
 data_color_rt_acc <- compute_rt_acc(data2) %>%
   dplyr::mutate(group = "color")
 
 
+# Self-other difference scores for the color group
+# (the second call recomputes and overwrites the first one)
 data_color_diff <- compute_diff(data_color_rt_acc) %>%
   dplyr::mutate(subj_idx = as.factor(subj_idx))
 
@@ -308,27 +333,34 @@ data_color_diff <- compute_diff(data_color_rt_acc) %>%
 
 **Merge and save final datasets**
 ```{r}
-data_sbfa <- dplyr::bind_rows(data_color_rt_acc, data_shape_rt_acc) %>%
+# Build the aggregated dataset for the sequential Bayes factor analysis (SBFA)
+data_sbfa <- dplyr::bind_rows(data_color_rt_acc, data_shape_rt_acc) %>%  # stack both groups vertically
   dplyr::mutate(
+    # Derive the task type from the group (associated dimension) and the task (part):
+    #  - judging the associated dimension  -> identity-relevant task
+    #  - judging the other dimension       -> identity-irrelevant task
+    #  - RDK_overlap is the identity-choice task
     task_type = case_when(
-      # Rules for color‑associated group
+      # Rules for the color-associated group
       group == "color" & part == "RDK_color" ~ "relevant",
       group == "color" & part == "RDK_shape" ~ "irrelevant",
-      # Rules for shape‑associated group
+      # Rules for the shape-associated group
       group == "shape" & part == "RDK_color" ~ "irrelevant",
       group == "shape" & part == "RDK_shape" ~ "relevant",
-      # identity‑choice task
+      # identity-choice task
       part == "RDK_overlap" ~ "overlap",
-      TRUE ~ NA_character_
+      TRUE ~ NA_character_               # fallback: anything else is undefined
     )
   )
 
+# Save the SBFA dataset
 output_file <- base::file.path(output_path, "data_sbfa.csv")
 utils::write.csv(data_sbfa, output_file, row.names = FALSE)
 
-# Export aggregated dataset
-data_all <- dplyr::bind_rows(data_color, data_shape) %>%
+# Build the trial-level dataset for the main analyses (BHM and HDDM)
+data_all <- dplyr::bind_rows(data_color, data_shape) %>%  # stack the two group datasets vertically
   dplyr::mutate(
+    # Same task-type recoding as above, applied at the trial level
     task_type = case_when(
       group == "color" & part == "RDK_color" ~ "relevant",
       group == "color" & part == "RDK_shape" ~ "irrelevant",
@@ -339,6 +371,7 @@ data_all <- dplyr::bind_rows(data_color, data_shape) %>%
     )
   )
 
+# Save the main trial-level dataset
 output_file <- base::file.path(output_path, "data_all.csv")
 utils::write.csv(data_all, output_file, row.names = FALSE)
 ```

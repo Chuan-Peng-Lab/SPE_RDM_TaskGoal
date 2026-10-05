@@ -1,9 +1,9 @@
-// 此脚本是用来获取初始阈值
-// 调整公式为：adjustedDifficulty = difficulty.get() + ((accuracy - targetAccuracy) / 2) * difficultyRange;
-// difficulty.get() 为从上一组试次中获取的难度值，即 coherence
+// This script runs the pre-experiment staircase that calibrates the initial difficulty
+// Adjustment formula: adjustedDifficulty = difficulty.get() + ((accuracy - targetAccuracy) / 2) * difficultyRange;
+// difficulty.get() is the difficulty value carried over from the previous block, i.e. the coherence
 
 
-// 初始化存储数组（easy 存储两次结果）
+// Initialize the storage arrays (the easy level stores two results)
 window.coherence = new Array(2).fill(0);
 window.proportion = new Array(2).fill(0);
 window.colorProportion = new Array(2).fill(0);
@@ -15,34 +15,36 @@ var coherence_output ={
   testOutput: []
 }
 
+// Experiment timeline of this file; it is pushed into the main timeline in index.html
 var getThreshold = {
   timeline: []
 };
 
-// 形状（shape）阶梯变量
+// Shape staircase variables
 let currentCycleMunShape = 0;
 let shapeStage = 0;
 let index
 let initial_difficulty_shape_easy = 0.7;
 
-// 初始化保存计数
+// Initialize the save counter
 const shapeSaveCounts = { easy: 0 };
 
-// 颜色（color）阶梯变量
+// Color staircase variables
 let currentCycleMunColor = 0;
 let colorStage = 0;
 let initial_difficulty_color_easy = 0.53;
 
-// 初始化保存计数
+// Initialize the save counter
 const colorSaveCounts = { easy: 0 };
 
 
+// random integer in [min, max] (used for the ITI in index.html)
 var randomInteger = (min, max) => {
   return Math.floor(Math.random() * (max - min + 1)) + min
 };
 
 
-// 指导语
+// Instruction screen
 let instruction_getThreshold = {
   type: jsPsychHtmlKeyboardResponse,
   stimulus: "",
@@ -113,7 +115,7 @@ var instruction_taskSeparate_color = {
   }
 };
 
-//------------------------- 注视点 --------------
+//------------------------- Fixation cross --------------
 
 var fixation = { 
   type: jsPsychHtmlKeyboardResponse,
@@ -126,9 +128,9 @@ var fixation = {
 };
 
 
-//设置难度的调整范围
+// Set the difficulty adjustment range
 
-// 形状Staircase（StaircaseShape1/StaircaseShape2）
+// Shape staircase object (StaircaseShape1)
 const StaircaseShape1 = {
   max: 0.63,
   min: 0.70,
@@ -137,15 +139,15 @@ const StaircaseShape1 = {
   set: (value) => {
     value = parseFloat(value.toFixed(2));
     initial_difficulty_shape_easy = value;
-    // 使用形状独立计数
+    // Use the shape-specific counter
     const index = shapeSaveCounts.easy; 
     window.proportion[index] = value;
-    shapeSaveCounts.easy++; // 仅更新形状计数
+    shapeSaveCounts.easy++; // only advance the shape counter
     console.log('shapeProportionArray:', window.proportion);
   },
 };
 
-// 颜色Staircase（StaircaseColor1）
+// Color staircase object (StaircaseColor1)
 const StaircaseColor1 = {
   max: 0.55,
   min: 0.58,
@@ -161,7 +163,7 @@ const StaircaseColor1 = {
   },
 };
 
-// 正式阶段的单个 trial（形状判断）
+// A single trial of the staircase (shape judgment)
 let single_trial_shape = {
   type: jsPsychRdk,
   number_of_dots: 100,
@@ -187,7 +189,7 @@ let single_trial_shape = {
     data_label: 'staircase_shape',
   },
   on_start: function() {
-    // 在散点图下方显示"圆"和"方"文字标签
+    // Show the "圆" and "方" text labels below the dot array
     var displayElement = jsPsych.getDisplayElement();
     var label_left = jsPsych.timelineVariable("label_left");
     var label_right = jsPsych.timelineVariable("label_right");
@@ -224,7 +226,7 @@ let single_trial_shape = {
 
 
 
-// 正式阶段的单个 trial（颜色判断）
+// A single trial of the staircase (color judgment)
 let single_trial_color = {
   type: jsPsychRdk,
   number_of_dots: 100,
@@ -316,7 +318,7 @@ var feedback_block_shape = {
     let rt = Math.round(trials.select('rt').mean());
     let rt_sd = Math.round(trials.select('rt').sd());
     let shapeRatio = trials.select('dot_shape_ratio').mean()
-    // 创建一个包含条件和结果的对象
+    // Create an object holding the condition and the result
     testOutput = {
       condition: {
         "task": task,
@@ -328,7 +330,7 @@ var feedback_block_shape = {
         "rt_sd": rt_sd
       }
     };
-    // 将 testOutput 添加到 coherence_output 中
+    // Append testOutput to coherence_output
     coherence_output.testOutput.push(testOutput);
     
     console.log(testOutput)
@@ -364,7 +366,7 @@ var feedback_block_color = {
   },
 };
 
-//设置循环的时间线（形状判断）
+// Timeline of one staircase cycle (shape judgment)
 let cycle_rdk_shape = {
   timeline: [fixation, single_trial_shape, feedbackTrial],
   timeline_variables: [
@@ -381,12 +383,12 @@ let cycle_rdk_shape = {
   randomize_order: true
 };
 
-// 加上 block 反馈的时间线（形状）
+// Cycle timeline plus the block feedback (shape)
 let cycle_shape = {
   timeline: [cycle_rdk_shape, feedback_block_shape],
   on_timeline_finish: function() {
     currentCycleMunShape += 1;
-    if(currentCycleMunShape %2 != 0 ){ // 每种条件下循环2次
+    if(currentCycleMunShape %2 != 0 ){ // loop twice per condition
       shapeStage += 1;
     } else {
       shapeStage = shapeStage
@@ -395,7 +397,7 @@ let cycle_shape = {
   }
 };
 
-//设置循环的时间线（颜色判断）
+// Timeline of one staircase cycle (color judgment)
 let cycle_rdk_color = {
   timeline: [fixation, single_trial_color, feedbackTrial],
   timeline_variables: [
@@ -412,7 +414,7 @@ let cycle_rdk_color = {
   randomize_order: true
 };
 
-// 加上 block 反馈的时间线（颜色）
+// Cycle timeline plus the block feedback (color)
 let cycle_color = {
   timeline: [cycle_rdk_color, feedback_block_color],
   on_timeline_finish: function() {
@@ -426,7 +428,8 @@ let cycle_color = {
   }
 };
 
-// generateStaircaseTimeline 为外部调用的函数，用于生成测试阶段的 staircase
+// generateStaircaseTimeline is an external helper that builds the staircase of the test phase
+// Build the shape staircase at the easy level
 let shape_easy = generateStaircaseTimeline({
   jsPsychInstance: jsPsych,
   targetAccuracy: 0.85,
@@ -436,6 +439,7 @@ let shape_easy = generateStaircaseTimeline({
   cycle: cycle_shape,
 });
 
+// Build the color staircase at the easy level
 let color_easy = generateStaircaseTimeline({
   jsPsychInstance: jsPsych,
   targetAccuracy: 0.85,
@@ -445,7 +449,7 @@ let color_easy = generateStaircaseTimeline({
   cycle: cycle_color,
 });
 
-// 仅 easy 水平，运行2次取收敛值
+// Only the easy level is used; it runs twice and takes the converged value
 function setCurrentDifficultyShape(currentCycleMunShape) {
   return StaircaseShape1.get();
 }
@@ -454,16 +458,18 @@ function setCurrentDifficultyColor(currentCycleMunColor) {
   return StaircaseColor1.get();
 }
 
+// Run the shape staircase twice and use the converged value
 let full_block_shape = {
   timeline: [shape_easy, shape_easy]
 };
 
+// Run the color staircase twice and use the converged value
 let full_block_color = {
   timeline: [color_easy, color_easy]
 };
 
-// 根据被试编号组别分配（形状 + 颜色，counterbalanced）
-// userId 偶数 → shape first; userId 奇数 → color first
+// Assign the task order by participant ID (shape + color, counterbalanced)
+// even userId -> shape first; odd userId -> color first
 var group_shape_first = {
   timeline: [instruction_taskSeparate_shape, full_block_shape, instruction_taskSeparate_color, full_block_color],
   conditional_function: function () {
@@ -488,10 +494,12 @@ var group_color_first = {
   }
 };
 
+// Pick one of the two counterbalanced orders
 var staircase_assign_group = {
   timeline: [group_shape_first, group_color_first]
 };
 
+// Final timeline of this file: instructions + the counterbalanced staircases
 getThreshold = {
   timeline: [instruction_getThreshold, staircase_assign_group]
 };

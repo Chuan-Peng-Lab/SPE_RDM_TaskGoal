@@ -1,13 +1,12 @@
 /*---------------------------------------------------------------------------------
-这段代码主要用于执行颜色条件下的实验，即人物标签与颜色匹配，之后进行散点群整体颜色判断
+This file runs the color-condition experiment: person labels are first associated
+with colors (association learning), followed by overall-color judgments of the dot array.
 -----------------------------------------------------------------------------------*/
+// Experiment timeline of this file; it is pushed into the main timeline in index.html
 var color = {
   timeline: []
 };
-
-var currentBlock = 0
-
-// Fisher-Yates shuffle：从完整条件数组中随机抽取 n 个 trial（不重复）
+var currentBlock = 0   // number of completed blocks (shown on the rest screens)
 function createPracticeSet(fullArray, n) {
   var shuffled = fullArray.slice();
   for (var i = shuffled.length - 1; i > 0; i--) {
@@ -19,7 +18,7 @@ function createPracticeSet(fullArray, n) {
   return shuffled.slice(0, n);
 }
 
-// 条件生成器：将 base condition 扩展为两种标签位置变体，使用 F/J 键
+// Condition generator: expand each base condition into two label-position variants (responded with the F/J keys)
 function generateDiscriminationConditions(baseTrials, labelMap) {
   var result = [];
   baseTrials.forEach(function(trial) {
@@ -28,13 +27,13 @@ function generateDiscriminationConditions(baseTrials, labelMap) {
       console.error("No label mapping for", trial.correct_value);
       return;
     }
-    // Variant 1: 正确答案标签在左边 → 按 F
+    // Variant 1: correct-answer label on the left -> press F
     result.push(Object.assign({}, trial, {
       label_left: labels[0],
       label_right: labels[1],
       correct_choice: "f"
     }));
-    // Variant 2: 正确答案标签在右边 → 按 J
+    // Variant 2: correct-answer label on the right -> press J
     result.push(Object.assign({}, trial, {
       label_left: labels[1],
       label_right: labels[0],
@@ -44,7 +43,8 @@ function generateDiscriminationConditions(baseTrials, labelMap) {
   return result;
 }
 
-// 定义一个函数来处理条件匹配和更新proportion值（仅 easy：0.59 映射到阈值收敛值）
+// Replace the placeholder proportion/coherence values in the condition arrays with the
+// threshold-calibrated values (easy level only: 0.59 is mapped to the converged threshold)
 function updateProportion(arr) {
   for (let i in arr) {
     const proportion = arr[i].target_color_proportion;
@@ -59,7 +59,7 @@ function updateProportion(arr) {
         arr[i].coherence = window.coherence[1];
         break;
     }
-    // 更新 shape 比例（如果存在）
+    // Also update the shape ratio (if the trial has one)
     if (arr[i].hasOwnProperty('dot_shape_ratio')) {
       const shapeRatio = arr[i].dot_shape_ratio;
       switch (shapeRatio) {
@@ -73,7 +73,7 @@ function updateProportion(arr) {
 
 
 
-// 生成器：在颜色辨别条件上正交增加形状维度难度（2种形状组合，仅 easy）
+// Generator: orthogonally add the shape-dimension difficulty to the color-discrimination conditions (2 shape combinations, easy only)
 function addShapeDifficulty(baseTrials) {
   var result = [];
   baseTrials.forEach(function(trial) {
@@ -91,8 +91,8 @@ function addShapeDifficulty(baseTrials) {
   return result;
 }
 
-// 生成器：在形状辨别条件上正交增加颜色维度难度（2种颜色组合，仅 easy）
-// colorToSelf: 若提供（"red"或"blue"），则根据颜色多数类型设置 association
+// Generator: orthogonally add the color-dimension difficulty to the shape-discrimination conditions (2 color combinations, easy only)
+// colorToSelf: if provided ("red" or "blue"), set association according to the majority color
 function addColorDifficulty(baseTrials, colorToSelf) {
   var result = [];
   var colorVariants = [
@@ -103,7 +103,7 @@ function addColorDifficulty(baseTrials, colorToSelf) {
     colorVariants.forEach(function(variant) {
       var newTrial = Object.assign({}, trial, variant);
       if (colorToSelf !== undefined) {
-        // 判断该变体的多数颜色：dot_color_final[0] 为红色则为红多，蓝色则为蓝多
+        // Determine the majority color of this variant: dot_color_final[0] = red means red majority, otherwise blue majority
         var isRedMajority = variant.dot_color_final[0] === "hsl(0, 50%, 50%)";
         var majorityColor = isRedMajority ? "red" : "blue";
         newTrial.association = (majorityColor === colorToSelf) ? "self" : "other";
@@ -115,10 +115,10 @@ function addColorDifficulty(baseTrials, colorToSelf) {
 }
 
 
-//--------------------匹配判断------------------------
-//匹配判断包含：指导语，示例，练习和正式任务
+//-------------------- Matching task ------------------------
+// The matching task includes: instruction screens, examples, practice, and formal trials
 
-// 指导语
+// Instruction screen
 var instruction_match = {
   type: jsPsychHtmlKeyboardResponse,
   stimulus: "",
@@ -182,7 +182,7 @@ var instruction_match = {
 color.timeline.push(instruction_match);
 
 
-// 练习
+// Practice
 
 var instruction_match_practice = {
   type: jsPsychHtmlKeyboardResponse,
@@ -230,10 +230,10 @@ var fixation = {
   }
 };
 
-//匹配判断任务的不同条件(subjectId 为偶数，则红色代表自己；subjectId 为奇数，则蓝色代表自己)
+// Matching-task conditions (even subjectId: red = self; odd subjectId: blue = self)
 
 let conditions_match_selfRed = [
-  // easy only (删除 hard 水平)
+  // easy only (the hard level was removed)
   { target_color_proportion: 0.59, dot_color_final: ["hsl(0, 50%, 50%)", "hsl(225, 50%, 50%)"], label: "我", correct_choice: "f", isMatch: "match", association: "self", difficulty:"easy"},
   { target_color_proportion: 0.59, dot_color_final: ["hsl(225, 50%, 50%)", "hsl(0, 50%, 50%)"], label: "我", correct_choice: "j", isMatch: "mismatch", association: "other", difficulty:"easy"},
   { target_color_proportion: 0.59, dot_color_final: ["hsl(225, 50%, 50%)", "hsl(0, 50%, 50%)"], label: "他", correct_choice: "f", isMatch: "match", association: "other", difficulty:"easy"},
@@ -248,7 +248,7 @@ let conditions_match_selfBlue = [
   { target_color_proportion: 0.59, dot_color_final: ["hsl(225, 50%, 50%)", "hsl(0, 50%, 50%)"], label: "他", correct_choice: "j", isMatch: "mismatch", association: "self", difficulty:"easy"},
 ]
 
-// 设置匹配任务的主要刺激
+// The main stimulus of the matching task
 
 var match_RDK = {
   type: jsPsychRdk,
@@ -284,7 +284,7 @@ var match_RDK = {
   },
   on_start: function () {
 
-    // 替换所有 label 为"他"的元素为性别对应称呼
+    // Replace every label equal to "他" with the gender-appropriate pronoun
     for (let i = 0; i < conditions_match_selfRed.length; i++) {
       if (conditions_match_selfRed[i].label === "他") {
         conditions_match_selfRed[i].label = `${labelVar}`;
@@ -294,13 +294,13 @@ var match_RDK = {
       }
     };
 
-    //替换proportion值
+    // Replace the proportion values with the threshold-calibrated ones
     updateProportion(conditions_match_selfBlue);
     updateProportion(conditions_match_selfRed);
   
     var displayElement = jsPsych.getDisplayElement();
     
-    //创建注视点
+    // Create the fixation cross
     var textDiv = document.createElement("div");
     textDiv.textContent = "+",
 
@@ -313,33 +313,33 @@ var match_RDK = {
     displayElement.appendChild(textDiv);
 
 
-    //创建图片标签
+    // Create the image label element
     var img = document.createElement("img");
-    // 根据label变量选择图片路径
+    // Choose the image path according to the label variable
     const label = jsPsych.timelineVariable("label");
     img.src = (() => {
       switch(jsPsych.timelineVariable("label")) {
         case "我": return "img/self.png";
-        case "他": return "img/he.png";    // 男性他人
-        case "她": return "img/she.png";  // 女性他人
+        case "他": return "img/he.png";    // male other
+        case "她": return "img/she.png";  // female other
         default: console.error("未知标签");
       }
     })();
     
-    // // 图片样式设置
+    // // Image style settings
     // img.style.position = "absolute";
-    // img.style.width = "135px";  // 根据实际图片尺寸调整
+    // img.style.width = "135px";  // adjust to the actual image size
     // img.style.height = "auto";
-    // img.style.bottom = "58%";   // 微调位置
+    // img.style.bottom = "58%";   // fine-tune the position
     // img.style.left = "50%";
-    // img.style.transform = "translateX(-50%)";  // 水平居中
+    // img.style.transform = "translateX(-50%)";  // horizontally centered
     // img.style.objectFit = "contain";
     
-    // // 添加ID便于后续操作
+    // // Add an ID for later manipulation
     // img.id = "label-image";
     // displayElement.appendChild(img);
 
-    // 在散点图下方显示人物标签文字（与匹配任务说明一致）
+    // Show the person-label text below the dot array (consistent with the matching-task instructions)
     var labelText = document.createElement("div");
     labelText.textContent = jsPsych.timelineVariable("label");
     labelText.style.position = "absolute";
@@ -353,7 +353,7 @@ var match_RDK = {
     labelText.style.zIndex = "10";
     displayElement.appendChild(labelText);
 
-    // 1000毫秒后隐藏刺激
+    // Hide the stimulus after 1000 ms (block currently disabled)
     /*setTimeout(function() {
       var elements = displayElement.querySelectorAll("*");
       elements.forEach(function(el) {
@@ -367,7 +367,7 @@ var match_RDK = {
   },
 };
 
-//练习阶段每个试次的反馈
+// Per-trial feedback of the practice phase
 
 var feedbackTrial = {
   type: jsPsychHtmlKeyboardResponse,
@@ -390,7 +390,7 @@ var feedbackTrial = {
   },
 };
 
-//匹配任务的每trial反馈（去掉"太慢"提醒）
+// Per-trial feedback of the matching task (the "too slow" reminder was removed)
 var feedbackTrial_match = {
   type: jsPsychHtmlKeyboardResponse,
   trial_duration: 500,
@@ -408,9 +408,9 @@ var feedbackTrial_match = {
   },
 };
 
-//计算整个练习阶段的总体正确率
-//计算32个试次的反应数，挑出正确的试次数，计算准确率 
-//如果整体正确率未达到90%，告知被试继续下一轮测试
+// Compute the overall accuracy of the whole practice phase
+// Take the trials of the last block, count the correct ones, and compute the accuracy 
+// If the overall accuracy is below 90%, tell the participant to keep practicing
 
 var instruction_retry_block = {
   type: jsPsychHtmlKeyboardResponse,
@@ -432,7 +432,7 @@ var instruction_retry_block = {
   },
 };
 
-//如果达到70%及以上，则结束练习
+// If the accuracy criterion is reached, end the practice
 var instruction_practiceEnd = {
   type: jsPsychHtmlKeyboardResponse,
   stimulus: `
@@ -450,12 +450,12 @@ var instruction_practiceEnd = {
   },
 };
 
-//========== 匹配练习（Block1无要求 + Block2需90%，最多5个block） ==========
-// 每次 loop 只跑 1 个 block（32 trials），由 loop_function 控制流程
-var match_pract_block = 0;   // 当前第几轮（0=block1, 1=block2, 2=block2重试...）
-var match_pract_retries = 0; // block2重试次数
+//========== Matching practice (Block 1 has no criterion; Block 2+ needs 90%; at most 5 blocks) ==========
+// Each loop iteration runs one block, and the flow is controlled by loop_function
+var match_pract_block = 0;   // current round (0 = block 1, 1 = block 2, 2 = block-2 retry, ...)
+var match_pract_retries = 0; // number of block-2 retries
 
-// Block1→Block2 过渡提示屏：告知被试进入下一个 block 且有正确率要求
+// Transition screen between Block 1 and Block 2: tells participants that the accuracy criterion applies from now on
 var instruction_block2_enter = {
   type: jsPsychHtmlKeyboardResponse,
   stimulus: `
@@ -478,23 +478,23 @@ var instruction_block2_enter = {
 
 var practice_block_selfRed = {
   timeline: [
-    // 指导语移到循环外面，确保只显示一次且不影响循环内 trial 的执行
+    // Instruction screen moved outside the loop so it is shown only once and does not affect the trials inside the loop
     instruction_match_practice,
     {
       timeline: [
-        // 1个block的trial（48 trials）
+        // The trials of one block
         {
           timeline: [fixation, match_RDK, feedbackTrial_match],
           timeline_variables: conditions_match_selfRed,
           repetitions: 12,
           randomize_order: true
         },
-        // Block1 完成后显示过渡提示（match_pract_block 在 loop_function 中才递增，故此时仍为 0）
+        // After Block 1, show the transition screen (match_pract_block is still 0 here; it is only incremented in loop_function)
         {
           timeline: [instruction_block2_enter],
           conditional_function: function() { return match_pract_block === 0; }
         },
-        // Block 2+ 完成后：达标显示完成提示，失败显示重试提示
+        // After Block 2+: show the completion screen if the criterion is met, otherwise the retry screen
         {
           timeline: [instruction_practiceEnd],
           conditional_function: function() {
@@ -517,10 +517,10 @@ var practice_block_selfRed = {
       loop_function: function () {
         match_pract_block++;
         if (match_pract_block === 1) {
-          // Block1 刚完成 → 继续到 Block 2
+          // Block 1 just finished -> continue to Block 2
           return true;
         }
-        // Block 2+ 完成，检查正确率
+        // Block 2+ finished: check the accuracy
         var trials = jsPsych.data.get().filter({task: 'response'}).last(48);
         var correct_trials = trials.filter({correct: true});
         var accuracy = Math.round(correct_trials.count() / trials.count() * 100);
@@ -529,7 +529,7 @@ var practice_block_selfRed = {
           console.log("[match_practice] Passed!");
           return false;
         }
-        // 未达标
+        // below the criterion
         match_pract_retries++;
         console.log("[match_practice] Failed, retry", match_pract_retries);
         if (match_pract_retries >= 4) {
@@ -544,7 +544,7 @@ var practice_block_selfRed = {
 
 var practice_block_selfBlue = {
   timeline: [
-    // 指导语移到循环外面，确保只显示一次且不影响循环内 trial 的执行
+    // Instruction screen moved outside the loop so it is shown only once and does not affect the trials inside the loop
     instruction_match_practice,
     {
       timeline: [
@@ -626,7 +626,7 @@ var practice_match = {
 
 color.timeline.push(practice_match);
 
-//--------正式关联学习已移除（只保留练习阶段）--------
+//-------- The formal association-learning phase was removed (only the practice phase remains) --------
 
 
 var rest_rdk = {
@@ -640,11 +640,11 @@ var rest_rdk = {
       </div>
     `;
   },
-  response_ends_trial: false, // 强制休息，期间按键无效
-  choices: " ", // 只允许空格
+  response_ends_trial: false, // forced rest, keys are ignored during it
+  choices: " ", // space key only
   trial_duration: null,
 
-  // 块数 +1
+  // increment the block counter
   on_start: function() {
     currentBlock += 1;
   },
@@ -655,14 +655,14 @@ var rest_rdk = {
     const spaceTipDom = document.getElementById('spaceTip');
     const trial = this;
 
-    // 倒计时定时器
+    // countdown timer
     const timer = setInterval(() => {
       restTime -= 1;
       countdownDom.textContent = restTime;
 
       if (restTime <= 0) {
         clearInterval(timer);
-        trial.response_ends_trial = true; // 时间到，允许按键继续
+        trial.response_ends_trial = true; // time is up, allow a key press to continue
         spaceTipDom.style.opacity = "1";
         spaceTipDom.style.color = "#32cd32";
       }
@@ -675,9 +675,9 @@ var rest_rdk = {
   data: { part: "instruction_rest" }
 };
 
-/*----------关联学习结束！下面是RDK颜色判断任务-----------*/
+/*---------- Association learning ends here! Below is the RDK color-judgment task -----------*/
 
-//指导语(包含开始，练习和结束)
+// Instruction screens (start, practice, and end)
 
 var instruction_RDK_beginning = {
   type: jsPsychHtmlKeyboardResponse,
@@ -700,7 +700,7 @@ var instruction_RDK_beginning = {
   }
 };
 
-//下面这些指导语会在后面 push
+// These instruction screens are pushed into the timeline later
 
 var instruction_RDK_practice = {
   type: jsPsychHtmlKeyboardResponse,
@@ -762,11 +762,12 @@ var instruction_RDK_formal_beginning = {
 };
 
 
-// 整体颜色判断任务
+// The overall-color judgment task
 
-//整体颜色判断任务的不同条件
+// Conditions of the overall-color judgment task
 
-// 颜色辨别任务基础条件（任务相关），目标=颜色，通过 addShapeDifficulty 正交增加形状维度难度
+// Base conditions of the color-discrimination task (identity-relevant): target = color;
+// the shape-dimension difficulty is added orthogonally via addShapeDifficulty
 var base_RDK_selfRed_core = [
   // target=color, association=self, easy, red-majority
   { target_color_proportion: 0.59, dot_color_final: ["hsl(0, 50%, 50%)", "hsl(225, 50%, 50%)"], difficulty: "easy", association: "self",
@@ -797,10 +798,10 @@ var conditions_RDK_selfBlue = generateDiscriminationConditions(base_RDK_selfBlue
   "blue": ["蓝", "红"]
 });
 
-/* ==================== 任务重合条件（身份判断） ==================== */
-// 被试判断散点图代表"我"还是"他/她"，根据关联维度推断身份
-// 目标=颜色（身份），通过 addShapeDifficulty 正交增加形状维度难度
-// selfRed（userId偶数）：红色=自我，蓝色=他人
+/* ==================== Identity-choice conditions (identity judgment) ==================== */
+// Participants judge whether the dot array represents "self" or "he/she", inferring identity from the associated dimension
+// Target = color (identity); the shape-dimension difficulty is added orthogonally via addShapeDifficulty
+// selfRed (even userId): red = self, blue = other
 var base_overlap_selfRed_core = [
   // self, easy (red=self, red-majority)
   { target_color_proportion: 0.59, dot_color_final: ["hsl(0, 50%, 50%)", "hsl(225, 50%, 50%)"], difficulty: "easy", association: "self",
@@ -811,7 +812,7 @@ var base_overlap_selfRed_core = [
 ];
 var base_overlap_selfRed = addShapeDifficulty(base_overlap_selfRed_core);
 
-// selfBlue（userId奇数）：蓝色=自我，红色=他人
+// selfBlue (odd userId): blue = self, red = other
 var base_overlap_selfBlue_core = [
   // self, easy (blue=self, blue-majority)
   { target_color_proportion: 0.59, dot_color_final: ["hsl(225, 50%, 50%)", "hsl(0, 50%, 50%)"], difficulty: "easy", association: "self",
@@ -832,7 +833,7 @@ var conditions_overlap_selfBlue = generateDiscriminationConditions(base_overlap_
   "other": ["他", "我"]
 });
 
-// 统一的辨别任务 RDK 刺激（用于任务相关、任务无关、任务重合）
+// The unified RDK stimulus of the discrimination tasks (used for the identity-relevant, identity-irrelevant, and identity-choice conditions)
 var RDK_discrimination = {
   type: jsPsychRdk,
   number_of_dots: 100,
@@ -864,7 +865,7 @@ var RDK_discrimination = {
     label_right: function () { return jsPsych.timelineVariable("label_right") }
   },
   on_start: function() {
-    // 统一更新所有条件数组的 proportion/coherence
+    // Update the proportion/coherence values of all condition arrays
     updateProportion(conditions_RDK_selfRed);
     updateProportion(conditions_RDK_selfBlue);
     updateProportion(conditions_shape_selfRed);
@@ -874,12 +875,12 @@ var RDK_discrimination = {
       updateProportion(conditions_overlap_selfBlue);
     }
 
-    // 创建散点图下方的文字标签
+    // Create the text labels below the dot array
     var label_left = jsPsych.timelineVariable("label_left");
     var label_right = jsPsych.timelineVariable("label_right");
     var taskType = jsPsych.timelineVariable("task_type");
 
-    // 任务重合条件：将"他"替换为性别对应称呼
+    // Identity-choice condition: replace "他" with the gender-appropriate pronoun
     if (taskType === "overlap") {
       var otherLabel = (typeof labelVar !== 'undefined' && labelVar) ? labelVar : "TA";
       if (label_left === "他") { label_left = otherLabel; }
@@ -888,7 +889,7 @@ var RDK_discrimination = {
 
     var displayElement = jsPsych.getDisplayElement();
 
-    // 左侧标签
+    // Left label
     var leftDiv = document.createElement("div");
     leftDiv.textContent = label_left;
     leftDiv.style.position = "absolute";
@@ -901,7 +902,7 @@ var RDK_discrimination = {
     leftDiv.style.zIndex = "10";
     displayElement.appendChild(leftDiv);
 
-    // 右侧标签
+    // Right label
     var rightDiv = document.createElement("div");
     rightDiv.textContent = label_right;
     rightDiv.style.position = "absolute";
@@ -919,10 +920,10 @@ var RDK_discrimination = {
   },
 };
 
-// 以下保留别名以兼容现有 block 引用
+// Keep this alias for compatibility with the existing block references
 var RDK = RDK_discrimination;
 
-//练习阶段的任务
+// Practice phase
 
 var practiceSet_RDK_selfRed = createPracticeSet(conditions_RDK_selfRed, 8);
 var practice_block_RDK_selfRed = {
@@ -999,11 +1000,11 @@ var practice_block_color = {
   timeline: [practice_RDK_selfRed, practice_RDK_selfBlue]
 };
 
-// color.timeline.push(practice_block_color); //这里不需要push，后面会统一push
+// color.timeline.push(practice_block_color); // not pushed here - all tasks are pushed together at the end
 
-//正式阶段的任务
+// Formal phase
 
-//设置反馈
+// Set up the block feedback
 
 var feedbackBlock_RDK = {
   type: jsPsychHtmlKeyboardResponse,
@@ -1094,6 +1095,7 @@ var formal_block_color = {
 };
 
 
+// Instruction screen of the identity-choice task
 var instruction_overlap = {
   type: jsPsychHtmlKeyboardResponse,
   stimulus: "",
@@ -1137,7 +1139,7 @@ var instruction_overlap = {
   }
 };
 
-// 练习阶段
+// Practice phase
 var practiceSet_overlap_selfRed = createPracticeSet(conditions_overlap_selfRed, 8);
 var practice_block_overlap_selfRed = {
   timeline: [
@@ -1202,7 +1204,7 @@ var practice_block_overlap = {
   timeline: [practice_overlap_selfRed, practice_overlap_selfBlue]
 };
 
-// 正式阶段
+// Formal phase
 var formal_block_overlap_selfRed = {
   timeline: [
     instruction_RDK_formal_beginning,
@@ -1267,10 +1269,10 @@ var formal_block_overlap = {
   timeline: [formal_overlap_selfRed, formal_overlap_selfBlue]
 };
 
-/*----------整体颜色判断任务结束！下面是形状判断任务-----------*/
+/*---------- The overall-color judgment task ends here! Below is the shape-judgment task -----------*/
 
 
-//指导语(包含开始，练习和结束)
+// Instruction screens (start, practice, and end)
 
 var instruction_motion_beginning = {
   type: jsPsychHtmlKeyboardResponse,
@@ -1296,7 +1298,7 @@ var instruction_motion_beginning = {
   }
 };
 
-//下面这些指导语会在后面 push
+// These instruction screens are pushed into the timeline later
 
 var instruction_motion = {
   type: jsPsychHtmlKeyboardResponse,
@@ -1316,12 +1318,13 @@ var instruction_motion = {
   }
 };
 
-// end 的指导语是一样的
+// The "end" instruction screen is the same for all tasks
 
 
 
-// 形状辨别任务基础条件（任务无关），目标=形状，通过 addColorDifficulty 正交增加颜色维度难度（仅 easy）
-// 注意：association 由 addColorDifficulty 根据颜色自动设置（selfRed: 红=self, 蓝=other）
+// Base conditions of the shape-discrimination task (identity-irrelevant): target = shape;
+// the color-dimension difficulty is added orthogonally via addColorDifficulty (easy only)
+// Note: association is set automatically by addColorDifficulty from the color (selfRed: red = self, blue = other)
 var base_shape_selfRed_core = [
   // target=shape, easy, circle
   { dot_shape_ratio: 0.59, dot_shape: "circle", difficulty: "easy",
@@ -1330,10 +1333,10 @@ var base_shape_selfRed_core = [
   { dot_shape_ratio: 0.59, dot_shape: "square", difficulty: "easy",
     coherent_direction: 0, coherence: 0, correct_value: "square", task_type: "irrelevant", data_part: "RDK_shape" }
 ];
-// selfRed: 红=self, 蓝=other
+// selfRed: red = self, blue = other
 var base_shape_selfRed = addColorDifficulty(base_shape_selfRed_core, "red");
 
-// selfBlue（userId奇数）：蓝=self, 红=other
+// selfBlue (odd userId): blue = self, red = other
 var base_shape_selfBlue_core = [
   // target=shape, easy, square
   { dot_shape_ratio: 0.59, dot_shape: "square", difficulty: "easy",
@@ -1342,10 +1345,10 @@ var base_shape_selfBlue_core = [
   { dot_shape_ratio: 0.59, dot_shape: "circle", difficulty: "easy",
     coherent_direction: 0, coherence: 0, correct_value: "circle", task_type: "irrelevant", data_part: "RDK_shape" }
 ];
-// selfBlue: 蓝=self, 红=other
+// selfBlue: blue = self, red = other
 var base_shape_selfBlue = addColorDifficulty(base_shape_selfBlue_core, "blue");
 
-// 直接生成完整条件数组（不再需要A/B分组）
+// Generate the full condition arrays directly (no A/B grouping needed)
 var conditions_shape_selfRed = generateDiscriminationConditions(base_shape_selfRed, {
   "circle": ["圆", "方"],
   "square": ["方", "圆"]
@@ -1355,7 +1358,7 @@ var conditions_shape_selfBlue = generateDiscriminationConditions(base_shape_self
   "square": ["方", "圆"]
 });
 
-// 形状辨别任务的练习和正式block
+// Practice and formal blocks of the shape-discrimination task
 
 var practiceSet_shape_selfBlue = createPracticeSet(conditions_shape_selfBlue, 8);
 var practice_block_shape_selfBlue = {
@@ -1505,9 +1508,9 @@ var formal_block_shape = {
   timeline: [formal_shape_selfBlue, formal_shape_selfRed]
 };
 
-// 三个辨别任务的6种随机顺序（被试间平衡）
-// 每种顺序包含：练习(practice) → 正式(formal)
-// 运行时根据 userId 选取顺序（每6名被试循环一次），确保被试间平衡
+// The 6 counterbalanced orders of the three discrimination tasks
+// Each order contains: practice -> formal for each task
+// The order is selected at runtime from userId (cycling every 6 participants) for between-subject counterbalancing
 
 var block_order_0 = {
   timeline: [practice_block_shape, formal_block_shape, practice_block_color, formal_block_color, practice_block_overlap, formal_block_overlap],

@@ -44,9 +44,8 @@
 </body>
 
 <script>
-
-  let userId;
-  let subjSex
+let userId;   // participant ID parsed from the URL (?id=...)
+let subjSex   // participant sex reported in the demographic survey
   const queryString = window.location.search;
   const urlParams = new URLSearchParams(queryString);
   const testMode = urlParams.get('test')=="true"?true:false
@@ -76,6 +75,7 @@
 
   //---------initialize--------
 
+  // Trigger a browser download of a JSON file
   function saveJsonToFile(jsonData, filename) {
     const jsonString = JSON.stringify(jsonData);
   
@@ -92,6 +92,7 @@
     window.URL.revokeObjectURL(link.href);
   }
 
+  // Create the jsPsych instance; on finish, save the data locally
   var jsPsych = initJsPsych({
     on_finish: function () {
       jsPsych.data.get().localSave('csv', `exp3_subj_${userId}.csv`);
@@ -104,12 +105,14 @@
 
   var main_timeline = [];
 
+  // Preload the images used by the experiment
   var preload = {
     type: jsPsychPreload,
     images: ["img//card.png", "img//color_blindness.jpg"],
     auto_preload: true
   };
 
+  // Enter fullscreen mode
   var fullScreen = {
     type: jsPsychFullscreen,
     fullscreen_mode: true,
@@ -123,6 +126,7 @@
 
   //---------Create instructions---------
 
+  // Welcome / informed-consent screen
   var beginning = {
     type: jsPsychHtmlKeyboardResponse,
     stimulus: `
@@ -145,6 +149,7 @@
     }
   };
 
+  // Goodbye screen
   var end = {
     type: jsPsychHtmlKeyboardResponse,
     stimulus: `
@@ -163,6 +168,7 @@
 
   //---------Create VirtualChinrest---------
 
+  // VirtualChinrest: screen-size calibration with a bank-card-sized item
   var card = {
     type: jsPsychVirtualChinrest,
     blindspot_reps: 3,
@@ -202,6 +208,7 @@
     }
   };
       
+  // Verification screen after the calibration
   var resized_stimulus = {
     type: jsPsychHtmlButtonResponse,
     stimulus: `
@@ -216,6 +223,7 @@
 
   //---------collecte perticipent's information---------
 
+  // Demographic survey (sex, age, handedness, color vision)
   const information = {
     type: jsPsychSurvey,
     survey_json: {
@@ -271,6 +279,7 @@
     }
   };
 
+  // Color-blindness check (report the letters seen in the plate)
   var color_test = {
     type: jsPsychSurveyText,
     preamble: `<img src="img/color_blindness.jpg" style="width:600px;"></img>`,
@@ -286,6 +295,7 @@
     }
   };
 
+  // Manipulation check: which feature represented self/other
   const survey_isMatch = {
     type: jsPsychSurvey,
     survey_json: {
@@ -355,6 +365,7 @@
     ];
   }
 
+  // Post-task strategy questionnaire
   const survey_strategy = {
     type: jsPsychSurvey,
     survey_json: {
@@ -526,8 +537,9 @@
     }
   };
 
-  //---------事后动机问卷---------
+  //--------- Post-hoc motivation questionnaire ---------
 
+  // Post-task motivation questionnaire
   var survey_motivation = {
     type: jsPsychSurvey,
     survey_json: {
@@ -567,8 +579,9 @@
     }
   };
 
-  //分配不同的组别
+  // Assign the participant to the associated-dimension group
 
+  // Run the shape-associated version for participants 1-40
   var group_shape = {
     timeline: [shape],
     conditional_function: function () {
@@ -581,6 +594,7 @@
     }
   };
 
+  // Run the color-associated version for participants 41-80
   var group_color = {
     timeline: [color],
     conditional_function: function () {
@@ -602,14 +616,14 @@
 
   //---------timeline---------
 
+  // The full experiment sequence
   main_timeline = [preload, fullScreen,  card, resized_stimulus, 
     information, color_test, 
     beginning, 
     getThreshold, 
     assign_group, 
     survey_isMatch, survey_strategy, survey_motivation, end]
-
-  jsPsych.run(main_timeline);
+jsPsych.run(main_timeline);   // start the experiment
 
 </script>
 
