@@ -6,6 +6,10 @@ output: html_document
 ---
 
 # Environment and R‑package Configuration
+
+**Environment and package setup**
+**Install cmdstanr if needed, fix the random seed, and load brms and the other analysis packages**
+
 ```{r}
 # Configure runtime environment
 # rm(list = ls())   
@@ -38,16 +42,18 @@ if (!require(pacman)){   # check whether pacman is already installed
 # Load (and install if missing) all packages needed for the analyses
 pacman::p_load(
   "rstan",          # Stan interface used by brms
-  "tidyverse",      # data manipulation and plotting
-  "ggplot2",         # plotting
+  "tidyverse",      
+  "ggplot2",        
   "brms",           # Bayesian multilevel (mixed-effects) models
   "bayesplot",      # MCMC diagnostics and posterior plots
   "bridgesampling", # bridge sampling for Bayes factors
-  "papaja"          # APA-style output and plot themes
+  "papaja"          
 )
 ```
 
 # Data Preprocessing
+
+**Load data_all.csv, set the reference levels (self / overlap baselines), and convert RT from seconds to milliseconds**
 
 ```{r data_preprocess}
 # Load the custom helper functions used in this analysis
@@ -75,6 +81,9 @@ data_all$rt <- data_all$rt * 1000
 ## 1.1 RT
 ### 1. Model Fitting
 
+**Model 1 (RT): association x task_type**
+**Fit the Bayesian mixed model on correct-trial RTs (lognormal family, maximal random slopes), cached to glmmModels/m1_rt**
+
 ```{r warning=FALSE}
 # Model 1: RT ~ association x task_type interaction (identity-choice & identity-relevant tasks)
 m1_rt <- data_all %>%
@@ -101,12 +110,15 @@ m1_rt <- data_all %>%
 
 ### 2. Model Evaluation
 
+**Check convergence (Rhat, ESS) and view the parameter summaries**
+
 ```{r}
-# Inspect the model: Rhat, ESS, and posterior summaries of all parameters
 summary(m1_rt)
 ```
 
 ### 3. Posterior Predictive Check
+
+**Compare simulated RTs against the observed RT distribution**
 
 ```{r}
 # Posterior predictive check: overlay the density of simulated RTs (y_rep) on the observed RTs
@@ -115,9 +127,10 @@ pp_check(m1_rt, type = "dens_overlay") +papaja::theme_apa()
 
 ### 4. Statistical Inference
 
+**Posterior RT of each condition**
+**Reconstruct the six condition RTs from the fixed-effect draws and back-transform from the log scale**
+
 ```{r}
-# Population‑level fixed effects: reaction‑time distribution for each condition
-# Posterior distribution of the population-level RT of each condition
 df_rt_pop <- m1_rt %>%
   tidybayes::gather_draws(`b_.*`, regex = TRUE) %>%  # draw the posterior of every b_ (fixed-effect) parameter
   dplyr::rename(term = .variable,    # rename tidybayes columns
@@ -151,9 +164,10 @@ df_rt_pop <- m1_rt %>%
 df_rt_pop
 ```
 
+**Posterior RT differences (other - self)**
+**Compute the other-self RT difference per task (identity-choice / identity-relevant / identity-irrelevant).**
+
 ```{r}
-# Population‑level fixed effects: posterior distribution of condition differences
-# Posterior distribution of the RT difference between conditions (other - self)
 df_rt_pop_diff_wide <- df_rt_pop %>%
   tidyr::pivot_wider(names_from = c(term), values_from = value) %>%  # back to wide format
   dplyr::mutate(
@@ -167,9 +181,9 @@ df_rt_pop_diff_wide <- df_rt_pop %>%
 df_rt_pop_diff_wide   # show the difference draws
 ```
 
+**Median and 95% HDI of each condition's RT**
+
 ```{r}
-# Population‑level fixed effects: posterior‑distribution summary statistics
-# Posterior summary statistics (median, 95% HDI, pd) for each condition's RT
 df_rt_fixed <- df_rt_pop%>%
   tidyr::pivot_wider(.,                       # one column per condition
                      id_cols = c('.chain', '.iteration', '.draw'),   # keep chain info as IDs
@@ -187,20 +201,18 @@ df_rt_fixed <- df_rt_pop%>%
 summary(df_rt_fixed)   # print the summary table
 ```
 
+**Test whether each task's RT difference excludes zero**
 
 ```{r}
 # Statistical inference using the sexit framework
-# sexit: sequential-effect existence & significance testing - does each difference
 # columns 4-6 hold the three task differences
 bayestestR::sexit(df_rt_pop_diff_wide[,c(4:6)])
 ```
 
-**BF**
+**Bayes factors: RT simple effects**
+**Savage-Dickey BFs for the self-other RT effect in each task.**
 
 ```{r}
-# Compute Bayes factors
-# Savage-Dickey Bayes factor for the simple effect:
-
 # self-other RT effect in the identity-choice task
 hyp_choice <- hypothesis(m1_rt, "associationother = 0")
 BF01_choice <- hyp_choice$hypothesis$Evid.Ratio   # evidence for the null vs. the alternative
@@ -223,8 +235,10 @@ print(BF10_irrelevant)
 ## 1.2 ACC
 ### 1. Model Fitting
 
+**Model 2 (ACC): association x task_type**
+**Fit the Bernoulli mixed model on trial-level accuracy, cached to glmmModels/m2_acc**
+
 ```{r warning=FALSE}
-# iter=1000,Total execution time: 852.2 seconds..18mins  (recorded runtime of a previous fit)
 # Model 2: accuracy ~ association x task_type interaction
 m2_acc <- data_all %>%
   brms::brm(
@@ -249,12 +263,16 @@ m2_acc <- data_all %>%
 
 ### 2. Model Evaluation
 
+**Convergence diagnostics and parameter summaries**
+
 ```{r}
 # Inspect the model: Rhat, ESS, and posterior summaries of all parameters
 summary(m2_acc)
 ```
 
 ### 3. Posterior Predictive Check
+
+**Compare simulated accuracies against the observed data**
 
 ```{r}
 # Posterior predictive check: overlay the density of simulated accuracies on the observed data
@@ -264,6 +282,7 @@ pp_check(m2_acc, type = "dens_overlay") + papaja::theme_apa()
 ### 4. Statistical Inference
 
 **raw accuracy difference**
+**Predicted-probability differences per task: median and 95% quantile interval (also in %)**
 
 ```{r}
 # Create a grid of all 2 (association) x 3 (task_type) condition combinations
@@ -307,7 +326,7 @@ diff_summary <- diff_draws %>%
 diff_summary   # print the summary table
 ```
 
-**data for polt**
+**data for polt: posterior accuracy differences**
 ```{r}
 # Create a grid of all 2 (association) x 3 (task_type) condition combinations
 newdata <- expand.grid(
@@ -344,6 +363,8 @@ df_acc_pop_diff_wide <- diff_draws %>%
 df_acc_pop_diff_wide   # show the wide-format difference draws
 ```
 
+**Posterior logit accuracy of each condition**
+
 ```{r}
 # Population‑level fixed effects: condition‑wise response distribution
 # Posterior distribution of the population-level logit accuracy of each condition
@@ -378,11 +399,9 @@ df_acc_pop <- m2_acc %>%
 df_acc_pop
 ```
 
-**logit accuracy difference**
+**posterior distribution of condition differences**
 
 ```{r}
-# Population‑level fixed effects: posterior distribution of condition differences
-# Posterior distribution of the accuracy difference (self - other) per task
 df_acc_pop_diff_wide <- df_acc_pop %>%
   tidyr::pivot_wider(names_from = c(term), values_from = value) %>%  # back to wide format
   dplyr::mutate(
@@ -396,9 +415,10 @@ df_acc_pop_diff_wide <- df_acc_pop %>%
 df_acc_pop_diff_wide   # show the wide-format difference draws
 ```
 
+**Summarize the condition accuracies**
+**Median and 95% HDI of each condition's logit accuracy**
+
 ```{r}
-# Population‑level fixed effects: posterior‑distribution descriptive statistics
-# Posterior summary statistics (median, 95% HDI, pd) for each condition's accuracy
 df_acc_fixed <- df_acc_pop%>%
   tidyr::pivot_wider(.,                       # one column per condition
                      id_cols = c('.chain', '.iteration', '.draw'),   # keep chain info as IDs
@@ -416,19 +436,17 @@ df_acc_fixed <- df_acc_pop%>%
 summary(df_acc_fixed)   # print the summary table
 ```
 
+**Test whether each task's accuracy difference excludes zero**
 
 ```{r}
-# Statistical inference using the sexit framework
 # Same sexit test for the accuracy differences
 bayestestR::sexit(df_acc_pop_diff_wide[,c(4:6)])
 ```
 
-**BF**
+**Bayes factors: ACC simple effects**
+**Savage-Dickey BFs for the self-other accuracy effect in each task**
 
 ```{r}
-# Compute Bayes factors
-# Savage-Dickey Bayes factor for the simple effect:
-
 # self-other RT effect in the identity-choice task
 hyp_choice <- hypothesis(m2_acc, "associationother = 0")
 BF01_choice <- hyp_choice$hypothesis$Evid.Ratio   # evidence for the null vs. the alternative
@@ -449,6 +467,9 @@ print(BF10_irrelevant)
 ```
 
 ## 1.3 Result Visualization
+
+**Visualization (Figure 2)**
+**Raw RT/accuracy distributions and posterior difference panels, assembled into a 2x2 figure**
 
 ```{r}
 # Stack the per-group aggregate datasets (needed for the raw descriptive panels)
@@ -715,9 +736,11 @@ ggsave("fig2_behavior.png", fig_combined, width = 15, height = 10, dpi = 300)
 # 2 Confounding variable test for dimension‑type effect
 ## 2.1 RT
 ### 1. Model Fitting
+
+**Confound check (RT)**
+**Fit RT ~ association x group x task_type to test moderation by the associated dimension**
+
 ```{r warning=FALSE}
-# Confound check: RT ~ association x group x task_type
-# (tests whether the associated dimension - shape vs. color - moderates the effects)
 m3_rt <- data_all %>%
   dplyr::filter(correct == 1) %>%     # RT models use correct trials only
   brms::brm(
@@ -737,6 +760,9 @@ m3_rt <- data_all %>%
 )
 ```
 ### 2. Model Evaluation
+
+**Convergence diagnostics and parameter summaries**
+
 ```{r}
 # Inspect the confound-check model: Rhat, ESS, and posterior summaries
 summary(m3_rt)
@@ -744,8 +770,11 @@ summary(m3_rt)
 
 ## 2.2 ACC
 ### 1. Model Fitting
+
+**Confound check (ACC)**
+**Fit accuracy ~ association x group x task_type**
+
 ```{r warning=FALSE}
-# Confound check: accuracy ~ association x group x task_type
 m4_acc <- data_all %>%
   brms::brm(
     # Three-way interaction model for the confound check
@@ -765,6 +794,9 @@ m4_acc <- data_all %>%
 ```
 
 ### 2. Model Evaluation
+
+**Convergence diagnostics and parameter summaries**
+
 ```{r}
 # Inspect the confound-check model: Rhat, ESS, and posterior summaries
 summary(m4_acc)

@@ -8,10 +8,8 @@ rm(list = ls())
 ```
 
 **Load required packages**
+
 ```{r}
-# if (.Platform$OS.type == 'windows') {
-#         Sys.setlocale(category = 'LC_ALL','en_US.UTF-8')
-# }
 # Configure R packages
 # pacman streamlines package management: it installs missing packages and attaches them in one call
 if (!require(pacman)){
@@ -31,7 +29,7 @@ pacman::p_load(
 
 ## 1. Read data
 
-**Read raw data files under target directory**
+**Step 1: Read raw data files under target directory**
 
 ```{r}
 # Set the path of the folder holding the raw experimental data
@@ -65,6 +63,8 @@ cat("Total loaded files:", length(df_list_1), "\n")
 print(names(df_list_1))
 ```
 ## 2. Data cleaning
+
+**Step 2: Clean each participant's data**
 
 ```{r}
 # Create the output folder if it does not already exist
@@ -149,6 +149,7 @@ for (file_name in names(df_list_1)) {
 ```
 
 **Read cleaned datasets**
+**Load all cleaned files and stack them into one trial-level dataframe**
 
 ```{r message=FALSE}
 # Set the path of the folder holding the cleaned per-participant files
@@ -183,6 +184,7 @@ rm(participant_info, info_list, participant_data, split_data,
 ```
 
 ## 3. Demographic summary statistics
+
 ```{r}
 # Build a demographic summary table from the cleaned data
 df.basic <- data %>%
@@ -257,7 +259,7 @@ compute_diff <- function(data, keepMatch=FALSE){
 }
 ```
 
-**Extract shape‑group and color‑group datasets separately**
+**Step 3: Extract shape‑group and color‑group datasets separately**
 
 ```{r}
 # Trial-level cleaning: keep only trials with plausible RTs (100-3000 ms, non-missing)
@@ -331,8 +333,14 @@ data_color_diff <- compute_diff(data_color_rt_acc) %>%
 ```
 
 
-**Merge and save final datasets**
+**Step 4: Merge and save final datasets**
+
 ```{r}
+# ============================================================
+# Step 5: Recode task_type and save the final datasets
+# Map each group x task combination onto relevant / irrelevant / overlap and export data_sbfa.csv and data_all.csv.
+# ============================================================
+
 # Build the aggregated dataset for the sequential Bayes factor analysis (SBFA)
 data_sbfa <- dplyr::bind_rows(data_color_rt_acc, data_shape_rt_acc) %>%  # stack both groups vertically
   dplyr::mutate(

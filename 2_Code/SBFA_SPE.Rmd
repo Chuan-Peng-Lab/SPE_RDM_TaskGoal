@@ -27,7 +27,7 @@ editor_options:
 rm(list = ls())
 ```
 
-Download and install required R packages
+**Download and install required R packages**
 
 ```{r message=FALSE, warning=FALSE}
 # (commented out) install the required packages once if they are missing
@@ -43,19 +43,17 @@ options(scipen = 9)  # avoid scientific notation unless numbers are very large/s
 set.seed(1234)       # fix the random seed so results are reproducible
 ```
 
-Load custom functions
+**Load custom functions**
+**bf_aov computes the sequential Bayes factors; plot_aov visualizes them**
 
 ```{r}
-# Sequential Bayes-factor computation for the association x task interaction
 source(here::here("Functions/Function_bf_avo.R"))
-# Plotting helper for the sequential Bayes factors
 source(here::here("Functions/Function_plot_avo.R"))
 ```
 
 ## Read cleaned data
 
 ```{r}
-# NOTE: adjust the file paths and filename patterns to your local folder layout.
 # Set the path of the folder holding the cleaned dataset
 folder_path <- "../../3_Data/3_2_exp2/CleanData"
 
@@ -77,9 +75,10 @@ for (i in seq_along(file_list)) {
 
 ## Bayes factor calculation
 
+**Prepare the data**
+**Recode subj_idx as a factor so it is treated as a grouping variable**
+
 ```{r}
-# Convert the participant ID to a factor so it is treated as a grouping variable,
-# not a numeric covariate
 data_sbfa <- data_sbfa %>%
   dplyr::mutate(subj_idx = as.factor(subj_idx))
 ```
@@ -87,16 +86,18 @@ data_sbfa <- data_sbfa %>%
 
 ### ACC
 
+**Run the sequential Bayes-factor analysis on accuracy (dv = 'acc'):**
+  - bf_aov accumulates participants one by one and returns BF10 for the
+  - association effect, the task effect, and their interaction
+
 ```{r}
-# Run the sequential Bayes-factor analysis on accuracy (dv = 'acc'):
-# bf_aov accumulates participants one by one and returns BF10 for the
-# association effect, the task effect, and their interaction
 bfs_acc <- bf_aov(data_sbfa, 'acc')
 
 bfs_acc   # inspect the accumulated Bayes factors for accuracy
 ```
 
 **Visualization**
+**Plot the accumulated BF for the association effect and for the interaction**
 
 ```{r}
 # Plot the accumulated BF for the association effect on accuracy
@@ -110,14 +111,16 @@ plot_bfs_int
 
 #### RT
 
+**Same sequential analysis for reaction time**
+
 ```{r}
-# Same sequential Bayes-factor analysis, now on reaction time (dv = 'rt')
 bfs_rt <- bf_aov(data_sbfa, 'rt')
 
 bfs_rt   # inspect the accumulated Bayes factors for RT
 ```
 
 **Visualization**
+**Plot the accumulated BF for the association effect and for the interaction**
 
 ```{r}
 # Plot the accumulated BF for the association effect on RT
@@ -128,7 +131,6 @@ plot_bfs_association
 plot_bfs_int <- plot_aov(bfs_rt, 'bfs_int', 'Interaction (RT)')
 plot_bfs_int
 ```
-
 
 
 **End**
