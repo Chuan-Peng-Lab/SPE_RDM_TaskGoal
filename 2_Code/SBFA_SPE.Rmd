@@ -55,7 +55,7 @@ source(here::here("Functions/Function_plot_avo.R"))
 
 ```{r}
 # Set the path of the folder holding the cleaned dataset
-folder_path <- "../../3_Data/3_2_exp2/CleanData"
+folder_path <- "../../3_Data/CleanData"
 
 # List the target CSV files
 file_list <- list.files(

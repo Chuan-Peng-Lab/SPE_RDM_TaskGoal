@@ -81,27 +81,51 @@ data_all$rt <- data_all$rt * 1000
 ## 1.1 RT
 ### 1. Model Fitting
 
+**Prior Predictive Check for RT mixed‑effects model**
+
+```{r}
+# sample_prior = "only": sample purely from prior distributions, ignore observed data likelihood
+
+prior_01 <- c( prior(normal(7, 0.4), class = "Intercept"), prior(normal(0, 0.3), class = "b"), prior(normal(0, 0.3), class = "sigma"), prior(normal(0, 0.4), class = "sd"), prior(lkj(2), class = cor))
+
+model_ppc_rt <- data_all %>%
+  dplyr::filter(correct == 1) %>%   # RT models use correct trials only
+  brms::brm(
+    rt ~ association*task_type + (1 + association*task_type|subj_idx),
+    data = .,
+    family = lognormal(),  # binary accuracy -> Bernoulli likelihood (logit link)
+    prior = prior_01,
+    chains = 4,
+    warmup = 500,
+    iter = 2000,
+    thin = 1,
+    cores = 4,
+    sample_prior = "only"  # Prior predictive check: sample only from priors
+  )
+
+# Visualize prior predictive distribution against empirical RT
+bayesplot::pp_check(model_ppc_rt, type = "dens_overlay") + papaja::theme_apa()
+```
+
 **Model 1 (RT): association x task_type**
 **Fit the Bayesian mixed model on correct-trial RTs (lognormal family, maximal random slopes), cached to glmmModels/m1_rt**
 
 ```{r warning=FALSE}
 # Model 1: RT ~ association x task_type interaction (identity-choice & identity-relevant tasks)
 m1_rt <- data_all %>%
-  dplyr::filter(correct == 1) %>%     # RT models use correct trials only
+  dplyr::filter(correct == 1) %>%     
   brms::brm(
-    # Fixed effects: association x task_type; random effects: participant-level intercepts
-    # and slopes for the full interaction (maximal random structure)
     rt ~ association*task_type + (1 + association*task_type|subj_idx),
     data = ., 
-    family=lognormal(),               # RTs are positively skewed -> lognormal likelihood
-    prior = prior(normal(0, 3), class = b),  # weakly informative priors on the regression coefficients
-    chains = 4,                       # 4 independent MCMC chains
-    warmup = 500,                     # 500 warm-up (burn-in) iterations per chain
-    iter = 2000,                      # 2000 total iterations per chain
-    thin = 1,                         # keep every sample (no thinning)
+    family=lognormal(),               
+    prior = prior_01,  # weakly informative priors on the regression coefficients
+    chains = 4,                       
+    warmup = 500,                     
+    iter = 2000,                      
+    thin = 1,                         
     sample_prior = "yes",             # also draw from the prior (for prior checks)
-    control = list(adapt_delta = .95),  # higher target acceptance rate to avoid divergent transitions
-    cores = parallel::detectCores(),  # use all available CPU cores
+    control = list(adapt_delta = .95),  
+    cores = parallel::detectCores(),  
     backend = 'cmdstanr',             # sample with the cmdstanr backend
     save_pars = save_pars(all = TRUE),  # save all model parameters
     file = file.path(curDir, "glmmModels/m1_rt")  # cache the fitted model to disk
@@ -235,6 +259,29 @@ print(BF10_irrelevant)
 ## 1.2 ACC
 ### 1. Model Fitting
 
+**Fit Bayesian bernoulli GLMM for prior predictive check on accuracy data**
+
+```{r}
+prior_02 <- c( prior(normal(1.5, 0.5), class = "Intercept"), prior(normal(0, 1), class = "b"), prior(normal(0, 0.5), class = "sd"), prior(lkj(2), class = cor))
+
+# sample_prior = "only": sample purely from priors, ignore observed data likelihood (prior predictive check)
+model_ppc_acc <- data_all %>%
+  brms::brm(
+    correct ~ association*task_type + (1 + association*task_type|subj_idx),
+    data = .,
+    family = "bernoulli",
+    prior = prior_02,
+    chains = 4,
+    warmup = 500,
+    iter = 2000,
+    thin = 1,
+    cores = 4,
+    sample_prior = "only"
+  )
+# Prior Predictive Check: overlay density of observed accuracy vs prior-simulated data
+pp_check(model_ppc_acc, type = "dens_overlay") + papaja::theme_apa()
+```
+
 **Model 2 (ACC): association x task_type**
 **Fit the Bernoulli mixed model on trial-level accuracy, cached to glmmModels/m2_acc**
 
@@ -242,19 +289,17 @@ print(BF10_irrelevant)
 # Model 2: accuracy ~ association x task_type interaction
 m2_acc <- data_all %>%
   brms::brm(
-    # Fixed effects: association x task_type; random effects: participant-level intercepts
-    # and slopes for the full interaction
     correct ~ association*task_type + (1 + association*task_type|subj_idx),
     data = .,
-    family = "bernoulli",             # binary accuracy -> Bernoulli likelihood (logit link)
-    prior = prior(normal(0, 3), class = b),  # weakly informative priors on the regression coefficients
-    chains = 4,                       # 4 independent MCMC chains
-    warmup = 500,                     # 500 warm-up (burn-in) iterations per chain
-    iter = 2000,                      # 2000 total iterations per chain
-    thin = 1,                         # keep every sample (no thinning)
+    family = "bernoulli",             
+    prior = prior_02,                 # weakly informative priors on the regression coefficients
+    chains = 4,                       
+    warmup = 500,                     
+    iter = 2000,                      
+    thin = 1,                         
     sample_prior = "yes",             # also draw from the prior (for prior checks)
-    control = list(adapt_delta = .95),  # higher target acceptance rate to avoid divergent transitions
-    cores = parallel::detectCores(),  # use all available CPU cores
+    control = list(adapt_delta = .95),  
+    cores = parallel::detectCores(),  
     backend = 'cmdstanr',             # sample with the cmdstanr backend
     save_pars = save_pars(all = TRUE),  # save all model parameters
     file = file.path(curDir, "glmmModels/m2_acc")  # cache the fitted model to disk
