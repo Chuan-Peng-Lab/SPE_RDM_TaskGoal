@@ -126,13 +126,13 @@ for (file_name in names(df_list_1)) {
     )
   ]
 
-  # Extract the formal trials by dropping the first 16 (practice) trials of each task
+  # Extract the formal trials of each task
   official_trials <- do.call(
   rbind,   # row-bind the per-task results into a single dataframe
   lapply(unique(behavior_data$part), function(part) {
     part_data <- behavior_data[behavior_data$part == part, ]  # trials of one task
     if (part %in% c("RDK_overlap", "RDK_color", "RDK_shape")) {
-      return(part_data[-(1:16), ])   # remove rows 1-16 (the practice trials)
+      return(tail(part_data, 128))   # the formal trials
     } else {
       return(NULL)
     }
